@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
+# Подумать над использованием orm_mode
+
 
 LETTER_MATCH_PATTERN = re.compile(r"^[0-9а-яА-Яa-zA-Z\-_ ]+$")
 
