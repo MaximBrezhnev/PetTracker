@@ -4,8 +4,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
-# Подумать над использованием orm_mode
-
 
 LETTER_MATCH_PATTERN = re.compile(r"^[0-9а-яА-Яa-zA-Z\-_ ]+$")
 
@@ -24,7 +22,6 @@ class CreateUserDTO(BaseModel):
         if not LETTER_MATCH_PATTERN.match(username):
             raise ValueError("Username contains incorrect symbols")
         return username
-
 
     @field_validator("password1")
     @classmethod
@@ -47,9 +44,19 @@ class ShowUserDTO(BaseModel):
     email: EmailStr
 
 
-class UpdateUserDTO(BaseModel):
-    username: Optional[str] = None
-    email: Optional[EmailStr] = Field(max_length=50, default=None)
+class LoginDTO(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class TokenDTO(BaseModel):
+    access_token: str
+    refresh_token: Optional[str] = None
+    token_type: str
+
+
+class ChangeUsernameDTO(BaseModel):
+    username: str
 
     @field_validator("username")
     @classmethod
@@ -62,12 +69,45 @@ class UpdateUserDTO(BaseModel):
         return username
 
 
-class LoginDTO(BaseModel):
-    email: EmailStr
-    password: str
+class ChangePasswordDTO(BaseModel):
+    old_password: str
+    new_password1: str
+    new_password2: str
+
+    @field_validator("new_password1")
+    @classmethod
+    def validate_password(cls, password: str) -> str:
+        if len(password) < 4:
+            raise ValueError("Password is weak")
+        return password
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_password_match(cls, data: dict) -> dict:
+        if data["new_password1"] != data["new_password2"]:
+            raise ValueError('passwords do not match')
+        return data
 
 
-class TokenDTO(BaseModel):
-    access_token: str
-    refresh_token: Optional[str] = None
-    token_type: str
+class EmailDTO(BaseModel):
+    email: EmailStr = Field(max_length=50)
+
+
+class ResetPasswordDTO(BaseModel):
+    token: str
+    new_password1: str
+    new_password2: str
+
+    @field_validator("new_password1")
+    @classmethod
+    def validate_password(cls, password: str) -> str:
+        if len(password) < 4:
+            raise ValueError("Password is weak")
+        return password
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_password_match(cls, data: dict) -> dict:
+        if data["new_password1"] != data["new_password2"]:
+            raise ValueError('passwords do not match')
+        return data

@@ -13,10 +13,13 @@ from fastapi import status
 from starlette.responses import JSONResponse
 
 from src.dependencies import get_db_session
-from src.user.dependencies import oauth2_scheme
-from src.user.schemas import CreateUserDTO, ShowUserDTO, UpdateUserDTO, TokenDTO, LoginDTO
-from src.user.services.services import create_user_service, verify_email_service, get_user_service, update_user_service, \
-    delete_user_service, login_service, refresh_token_service
+from src.user.dependencies import oauth2_scheme, get_current_user
+from src.user.models import User
+from src.user.schemas import CreateUserDTO, ShowUserDTO, TokenDTO, LoginDTO, ChangeUsernameDTO, ChangePasswordDTO, \
+    EmailDTO, ResetPasswordDTO
+from src.user.services.services import create_user_service, verify_email_service, get_user_service, \
+    delete_user_service, login_service, refresh_token_service, change_username_service, change_password_service, \
+    change_email_service, confirm_email_change_service, reset_password_service, change_password_on_reset_service
 
 user_router = APIRouter(prefix="/user")
 
@@ -56,7 +59,7 @@ async def verify_email(
     try:
         await verify_email_service(token, db_session)
         return templates.TemplateResponse(
-            "verification_result.html",
+            "confirmation_result.html",
             {
                 "request": request,
                 "header": "Вы успешно зарегистрировались в PetTracker",
@@ -65,7 +68,7 @@ async def verify_email(
         )
     except (ValueError, JWTError):
         return templates.TemplateResponse(
-            "verification_result.html",
+            "confirmation_result.html",
             {
                 "request": request,
                 "header": "Что-то пошло не так",
@@ -91,37 +94,6 @@ async def get_user(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
-        )
-
-
-@user_router.patch(path="/{user_id}", response_model=ShowUserDTO)
-async def update_user(
-        body: UpdateUserDTO,
-        user_id: UUID,
-        db_session: AsyncSession = Depends(get_db_session)) -> ShowUserDTO:
-    parameters_to_change = body.dict(exclude_none=True)
-    if not parameters_to_change:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one parameter must be provided"
-        )
-
-    try:
-        updated_user = await update_user_service(user_id, parameters_to_change, db_session)
-        return ShowUserDTO(
-            user_id=updated_user.user_id,
-            username=updated_user.username,
-            email=updated_user.email
-        )
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    except IntegrityError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="User with this credentials already exists"
         )
 
 
@@ -170,4 +142,139 @@ async def refresh_token(token: str = Depends(oauth2_scheme)) -> TokenDTO:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials"
+        )
+
+
+@user_router.patch(path='/change-username', response_model=ShowUserDTO)
+async def change_username(
+        body: ChangeUsernameDTO,
+        user: User = Depends(get_current_user),
+        db_session: AsyncSession = Depends(get_db_session)) -> ShowUserDTO:
+    try:
+        updated_user: User = await change_username_service(user, body.username, db_session)
+        return ShowUserDTO(
+            user_id=updated_user.user_id,
+            username=updated_user.username,
+            email=updated_user.email,
+        )
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User with this username already exists"
+        )
+
+
+@user_router.patch(path="/change-password", response_model=ShowUserDTO)
+async def change_password(
+        body: ChangePasswordDTO,
+        user: User = Depends(get_current_user),
+        db_session: AsyncSession = Depends(get_db_session)) -> ShowUserDTO:
+    try:
+        updated_user: User = await change_password_service(user, body, db_session)
+        return ShowUserDTO(
+            user_id=updated_user.user_id,
+            username=updated_user.username,
+            email=updated_user.email,
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect old password was provided"
+        )
+
+
+@user_router.patch(path="/change-email")
+async def change_email(
+        body: EmailDTO,
+        user: User = Depends(get_current_user)) -> JSONResponse:
+    try:
+        await change_email_service(new_email=body.email, user=user)
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"message": "Email for confirmation of email change was sent"}
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "The user already uses this email"}
+        )
+    except (SMTPRecipientsRefused, SMTPDataError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cannot send email"
+        )
+
+    
+@user_router.get(path="/change-email/confirmation")
+async def confirm_email_change(
+        request: Request,
+        token: str,
+        db_session: AsyncSession = Depends(get_db_session)) -> HTMLResponse:
+    try:
+        await confirm_email_change_service(token, db_session)
+        return templates.TemplateResponse(
+            "confirmation_result.html",
+            {
+                "request": request,
+                "header": "Вы успешно сменили почту",
+                "message": "Теперь вы можете вернуться в свой профиль в PetTracker"
+            }
+        )
+    except IntegrityError:
+        return templates.TemplateResponse(
+            "confirmation_result.html",
+            {
+                "request": request,
+                "header": "Не удалось сменить электронную почту",
+                "message": "В PetTracker уже существует аккаунт, привязанный к этой почте"
+            }
+        )
+    except (ValueError, JWTError):
+        return templates.TemplateResponse(
+            "confirmation_result.html",
+            {
+                "request": request,
+                "header": "Что-то пошло не так",
+                "message": "К сожалению, подтвердить смену почты не удалось. Возможно, ссылка недействительна или "
+                           "истекла. Пожалуйста, запросите новую ссылку для подтверждения."
+            }
+        )
+
+
+@user_router.post(path="/auth/reset-password")
+async def reset_password(body: EmailDTO) -> JSONResponse:
+    try:
+        await reset_password_service(body.email)
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"message": "Password reset email was sent"}
+        )
+    except (SMTPRecipientsRefused, SMTPDataError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cannot send email"
+        )
+
+
+@user_router.patch(path="auth/reset-password/confirmation", response_model=ShowUserDTO)
+async def change_password_on_reset(
+        token: str,
+        body: ResetPasswordDTO,
+        db_session: AsyncSession = Depends(get_db_session)) -> ShowUserDTO:
+    try:
+        updated_user = await change_password_on_reset_service(token, body.new_password1, db_session)
+        return ShowUserDTO(
+            user_id=updated_user.user_id,
+            username=updated_user.username,
+            email=updated_user.email
+        )
+    except (ValueError, JWTError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "Could not validate credentials"}
+        )
+    except (SMTPRecipientsRefused, SMTPDataError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cannot send email"
         )

@@ -12,7 +12,7 @@ from src.user.services.dal_services import get_user_by_email
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
-async def get_current_user_from_token(
+async def get_current_user(
         token: str = Depends(oauth2_scheme),
         db_session: AsyncSession = Depends(get_db_session)) -> User:
 

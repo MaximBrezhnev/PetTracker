@@ -3,15 +3,15 @@ from typing import Optional
 from uuid import UUID
 
 from jose import jwt
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
 from src.user.models import User
-from src.user.schemas import CreateUserDTO
-from src.user.services.auth_services import check_password, create_jwt_token, get_email_from_token
+from src.user.schemas import CreateUserDTO, ChangePasswordDTO
+from src.user.services.auth_services import check_password, create_jwt_token, get_email_from_token, get_password_hash
 from src.user.services.dal_services import get_user_by_email, update_username_and_password, create_new_user, \
-    get_user_by_username, update_user_upon_verification, get_user_by_user_id, update_user, delete_user
+    update_user_upon_verification, get_user_by_user_id, delete_user, change_username, \
+    change_password, update_user_when_changing_email, change_password_on_reset
 from src.user.services.email_servcies import send_email
 
 
@@ -26,12 +26,17 @@ async def create_user_service(body: CreateUserDTO, db_session: AsyncSession) -> 
     else:
         user = await create_new_user(body.username, body.email, body.password1, db_session)
 
-    await send_email(email=[user.email, ], instance=user)
+    await send_email(
+        email=[user.email, ],
+        instance=user,
+        subject="Письмо для подтверждения регистрации в PetTracker",
+        template_name="confirmation_email.html"
+    )
 
 
 async def verify_email_service(token: str, db_session: AsyncSession) -> None:
     payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-    user = await get_user_by_username(payload.get("username", None), db_session)
+    user = await get_user_by_email(payload.get("email", None), db_session)
 
     if user is None:
         raise ValueError("User does not exist")
@@ -45,18 +50,6 @@ async def get_user_service(user_id: UUID, db_session: AsyncSession) -> User:
     if user is None:
         raise ValueError("User does not exist")
     return user
-
-
-async def update_user_service(
-        user_id: UUID,
-        parameters_to_change: dict,
-        db_session: AsyncSession) -> User:
-    user = await get_user_by_user_id(user_id, db_session)
-    if user is None:
-        raise ValueError("User does not exist")
-
-    updated_user = await update_user(user, parameters_to_change, db_session)
-    return updated_user
 
 
 async def delete_user_service(user_id: UUID, db_session: AsyncSession):
@@ -101,3 +94,69 @@ def refresh_token_service(token: str) -> dict:
         "token_type": "bearer",
     }
 
+
+async def change_username_service(user: User, new_username: str, db_session: AsyncSession) -> User:
+    if user.username != new_username:
+        updated_user: User = await change_username(user, new_username, db_session)
+        return updated_user
+    return user
+
+
+async def change_password_service(user: User, body: ChangePasswordDTO, db_session: AsyncSession) -> User:
+    if user.hashed_password != body.old_password:
+        raise ValueError("Incorrect old password")
+
+    updated_user: User = await change_password(user, body.new_password1, db_session)
+    return updated_user
+
+
+async def change_email_service(user: User, new_email: str) -> None:
+    if user.email == new_email:
+        raise ValueError("The user already uses this email")
+    await send_email(
+        email=[new_email, ],
+        instance=user,
+        subject="Письмо для подтверждения смены электронной почты в PetTracker",
+        template_name="confirmation_of_email_change.html"
+    )
+
+
+async def confirm_email_change_service(token: str, db_session: AsyncSession) -> None:
+    payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+    user = await get_user_by_user_id(payload.get("current_user_id", None), db_session)
+
+    if user is None:
+        raise ValueError("User does not exist")
+
+    await update_user_when_changing_email(user, payload.get("email", None), db_session)
+
+
+async def reset_password_service(email: str) -> None:
+    print(get_password_hash("eddd"))
+    await send_email(
+        email=[email, ],
+        subject="Письмо для сброса пароля в PetTracker",
+        template_name="password_reset.html"
+    )
+
+
+async def change_password_on_reset_service(
+        token: str,
+        new_password: str,
+        db_session: AsyncSession
+) -> User:
+    payload: dict = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+    user: User = await get_user_by_email(
+        email=payload.get("email", None),
+        db_session=db_session
+    )
+
+    if user is None:
+        raise ValueError("User does not exist")
+
+    updated_user: User = await change_password_on_reset(
+        user=user,
+        new_password=new_password,
+        db_session=db_session
+    )
+    return updated_user
