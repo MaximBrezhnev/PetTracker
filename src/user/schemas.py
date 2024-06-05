@@ -1,113 +1,66 @@
-import re
 from typing import Optional
-from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, ConfigDict
 
-
-LETTER_MATCH_PATTERN = re.compile(r"^[0-9а-яА-Яa-zA-Z\-_ ]+$")
+from src.user.mixins import UsernameValidationMixin, PasswordValidationMixin
 
 
-class CreateUserDTO(BaseModel):
+class CreateUserDTO(UsernameValidationMixin, PasswordValidationMixin, BaseModel):
+    """Model that represents data for registration"""
+
     username: str
-    email: EmailStr = Field(max_length=50)
+    email: EmailStr
     password1: str
     password2: str
 
-    @field_validator("username")
-    @classmethod
-    def validate_username(cls, username: str) -> str:
-        if len(username) < 1 or len(username) > 20:
-            raise ValueError("Incorrect username length")
-        if not LETTER_MATCH_PATTERN.match(username):
-            raise ValueError("Username contains incorrect symbols")
-        return username
-
-    @field_validator("password1")
-    @classmethod
-    def validate_password(cls, password: str) -> str:
-        if len(password) < 4:
-            raise ValueError("Password is weak")
-        return password
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_password_match(cls, data: dict) -> dict:
-        if data["password1"] != data["password2"]:
-            raise ValueError('passwords do not match')
-        return data
-
 
 class ShowUserDTO(BaseModel):
-    user_id: UUID
+    """Model that represents data for user displaying"""
+
+    model_config = ConfigDict(from_attributes=True)
+
     username: str
     email: EmailStr
 
 
 class LoginDTO(BaseModel):
+    """Model that represents data for logging"""
+
     email: EmailStr
     password: str
 
 
 class TokenDTO(BaseModel):
+    """Model that represents data for authorization"""
+
     access_token: str
     refresh_token: Optional[str] = None
     token_type: str
 
 
-class ChangeUsernameDTO(BaseModel):
+class ChangeUsernameDTO(UsernameValidationMixin, BaseModel):
+    """Model that represents data for username change"""
+
     username: str
 
-    @field_validator("username")
-    @classmethod
-    def validate_username(cls, username: str) -> str:
-        if username is not None:
-            if len(username) < 1 or len(username) > 20:
-                raise ValueError("Incorrect username length")
-            if not LETTER_MATCH_PATTERN.match(username):
-                raise ValueError("Username contains incorrect symbols")
-        return username
 
+class ChangePasswordDTO(PasswordValidationMixin, BaseModel):
+    """Model that represents data for password change"""
 
-class ChangePasswordDTO(BaseModel):
     old_password: str
     new_password1: str
     new_password2: str
 
-    @field_validator("new_password1")
-    @classmethod
-    def validate_password(cls, password: str) -> str:
-        if len(password) < 4:
-            raise ValueError("Password is weak")
-        return password
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_password_match(cls, data: dict) -> dict:
-        if data["new_password1"] != data["new_password2"]:
-            raise ValueError('passwords do not match')
-        return data
-
 
 class EmailDTO(BaseModel):
-    email: EmailStr = Field(max_length=50)
+    """Model that represents data with password reset email"""
+
+    email: EmailStr
 
 
-class ResetPasswordDTO(BaseModel):
+class ResetPasswordDTO(PasswordValidationMixin, BaseModel):
+    """Model that represents data for password reset"""
+
     token: str
     new_password1: str
     new_password2: str
-
-    @field_validator("new_password1")
-    @classmethod
-    def validate_password(cls, password: str) -> str:
-        if len(password) < 4:
-            raise ValueError("Password is weak")
-        return password
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_password_match(cls, data: dict) -> dict:
-        if data["new_password1"] != data["new_password2"]:
-            raise ValueError('passwords do not match')
-        return data

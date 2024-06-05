@@ -10,7 +10,7 @@ from jinja2 import Environment, FileSystemLoader
 from jose import jwt
 from pydantic import BaseModel, EmailStr
 
-from src.config import SECRET_KEY, EMAIL_CONF
+from src.config import SECRET_KEY, EMAIL_CONF, FRONTEND_URL
 from src.user.models import User
 
 
@@ -59,5 +59,5 @@ def _get_template_for_email_confirmation(token: str, template_name: str) -> str:
     )
     env = Environment(loader=FileSystemLoader(templates_folder))
     template = env.get_template(template_name)
-    return template.render(token=token)
+    return template.render(frontend_url=FRONTEND_URL, token=token)
 

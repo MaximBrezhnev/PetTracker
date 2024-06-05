@@ -11,6 +11,8 @@ class Base(DeclarativeBase):
 
 
 class User(Base):
+    """Models that represents user"""
+
     __tablename__ = "user"
 
     user_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

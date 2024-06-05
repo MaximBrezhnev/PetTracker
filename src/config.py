@@ -16,3 +16,6 @@ EMAIL_CONF = ConnectionConfig(
     USE_CREDENTIALS=True,
     VALIDATE_CERTS=True,
 )
+
+
+FRONTEND_URL: str = "http://localhost:18000/api/v1/user/auth/mock"
