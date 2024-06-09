@@ -10,8 +10,8 @@ from src.user.schemas import CreateUserDTO, ChangePasswordDTO
 from src.user.services.auth_services import check_password, create_jwt_token, get_email_from_token, get_password_hash
 from src.user.services.dal_services import get_user_by_email, update_username_and_password, create_new_user, \
     update_user_upon_verification, get_user_by_user_id, delete_user, change_username, \
-    change_password, update_user_when_changing_email
-from src.user.services.email_servcies import send_email
+    change_password, update_user_when_changing_email, get_user_by_username
+from src.user.services.email_services import send_email
 
 
 async def create_user_service(body: CreateUserDTO, db_session: AsyncSession) -> None:
@@ -22,7 +22,12 @@ async def create_user_service(body: CreateUserDTO, db_session: AsyncSession) -> 
     if user is not None:
         if user.is_active:
             raise ValueError("User already exists")
-        await update_username_and_password(body.username, body.password1, user, db_session)
+        await update_username_and_password(
+            body.username,
+            get_password_hash(body.password1),
+            user,
+            db_session
+        )
 
     else:
         user: User = await create_new_user(
@@ -58,10 +63,10 @@ async def delete_user_service(user: User, db_session: AsyncSession) -> None:
     await delete_user(user, db_session)
 
 
-async def login_service(email: str, password: str, db_session: AsyncSession) -> dict:
+async def login_service(username: str, password: str, db_session: AsyncSession) -> dict:
     """Service for login controller"""
 
-    user: Optional[User] = await get_user_by_email(email, db_session)
+    user: Optional[User] = await get_user_by_username(username, db_session)
     if user is None:
         raise ValueError("User does not exist")
 
@@ -72,10 +77,10 @@ async def login_service(email: str, password: str, db_session: AsyncSession) -> 
         raise ValueError("Passwords do not match")
 
     access_token: str = create_jwt_token(
-        email, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        user.email, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     refresh_token: str = create_jwt_token(
-        email, timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+        user.email, timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     )
 
     return {
@@ -85,14 +90,10 @@ async def login_service(email: str, password: str, db_session: AsyncSession) -> 
     }
 
 
-def refresh_token_service(token: str) -> dict:
+def refresh_token_service(user: User) -> dict:
     """Service for refresh_token controller"""
 
-    email: Optional[str] = get_email_from_token(token)
-    if email is None:
-        raise JWTError("Could not validate credentials")
-
-    new_access_token: str = create_jwt_token(email, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    new_access_token: str = create_jwt_token(user.email, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     return {
         "access_token": new_access_token,
         "token_type": "bearer",
@@ -105,6 +106,7 @@ async def change_username_service(user: User, new_username: str, db_session: Asy
     if user.username != new_username:
         updated_user: User = await change_username(user, new_username, db_session)
         return updated_user
+
     return user
 
 
@@ -117,11 +119,12 @@ async def change_password_service(
     if not check_password(user.hashed_password, body.old_password):
         raise ValueError("Incorrect old password")
 
-    updated_user: User = await change_password(
+    updated_user: Optional[User] = await change_password(
         user=user,
-        new_password=get_password_hash(body.new_password1),
+        new_password=get_password_hash(body.password1),
         db_session=db_session
     )
+
     return updated_user
 
 
@@ -186,7 +189,7 @@ async def change_password_on_reset_service(
     )
 
     if user is None:
-        raise JWTError("Could not validate credentials")
+        raise ValueError("User does not exist")
 
     if not user.is_active:
         raise ValueError("User does not exist")

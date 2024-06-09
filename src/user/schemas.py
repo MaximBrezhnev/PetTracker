@@ -23,13 +23,6 @@ class ShowUserDTO(BaseModel):
     email: EmailStr
 
 
-class LoginDTO(BaseModel):
-    """Model that represents data for logging"""
-
-    email: EmailStr
-    password: str
-
-
 class TokenDTO(BaseModel):
     """Model that represents data for authorization"""
 
@@ -48,8 +41,8 @@ class ChangePasswordDTO(PasswordValidationMixin, BaseModel):
     """Model that represents data for password change"""
 
     old_password: str
-    new_password1: str
-    new_password2: str
+    password1: str
+    password2: str
 
 
 class EmailDTO(BaseModel):
@@ -62,5 +55,5 @@ class ResetPasswordDTO(PasswordValidationMixin, BaseModel):
     """Model that represents data for password reset"""
 
     token: str
-    new_password1: str
-    new_password2: str
+    password1: str
+    password2: str

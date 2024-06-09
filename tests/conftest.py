@@ -1,5 +1,6 @@
 import os
-from typing import Generator, Any
+from datetime import timedelta
+from typing import Generator, Any, Optional
 
 import asyncpg
 from psycopg2 import pool
@@ -9,8 +10,10 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy import text, NullPool
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession, AsyncEngine
 
+from src.config import ACCESS_TOKEN_EXPIRE_MINUTES
 from src.dependencies import get_db_session
 from src.main import app
+from src.user.services.auth_services import create_jwt_token
 
 TEST_DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@127.0.0.1:15433/postgres"
 TABLES: list[str] = ["user", ]
@@ -113,22 +116,25 @@ def get_user_from_database(pg_pool):
     return get_user_from_database_by_email
 
 
-def get_user_data_dict(user: tuple) -> dict:
+def get_user_data_dict(user: Optional[tuple]) -> dict:
     user_data = dict()
 
-    for field_number in range(len(user)):
-        if field_number == 0:
-            user_data["user_id"] = user[field_number]
-        elif field_number == 1:
-            user_data["username"] = user[field_number]
-        elif field_number == 2:
-            user_data["email"] = user[field_number]
-        elif field_number == 6:
-            user_data["is_active"] = user[field_number]
-        elif field_number == 7:
-            user_data["is_admin"] = user[field_number]
+    if user is not None:
+        for field_number in range(len(user)):
+            if field_number == 0:
+                user_data["user_id"] = user[field_number]
+            elif field_number == 1:
+                user_data["username"] = user[field_number]
+            elif field_number == 2:
+                user_data["email"] = user[field_number]
+            elif field_number == 3:
+                user_data["hashed_password"] = user[field_number]
+            elif field_number == 6:
+                user_data["is_active"] = user[field_number]
+            elif field_number == 7:
+                user_data["is_admin"] = user[field_number]
 
-    return user_data
+        return user_data
 
 
 @pytest.fixture
@@ -156,5 +162,15 @@ def create_user_in_database(pg_pool):
                 pg_pool.putconn(connection)
 
     return create_user_in_database
+
+
+def create_test_auth_headers_for_user(email: str) -> dict[str, str]:
+    access_token = create_jwt_token(
+        email,
+        timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+
+    return {"Authorization": f"Bearer {access_token}"}
+
 
 

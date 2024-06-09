@@ -90,7 +90,7 @@ async def get_user_by_user_id(
 async def delete_user(user: User, db_session: AsyncSession) -> None:
     """DAL service that deactivates user"""
 
-    with db_session.begin():
+    async with db_session.begin():
         query: Update = (
             update(User)
             .where(User.user_id == user.user_id)
@@ -135,3 +135,16 @@ async def update_user_when_changing_email(user: User, new_email: str, db_session
         )
         result: Result = await db_session.execute(query)
     return result.fetchone()[0]
+
+
+async def get_user_by_username(
+        username: str, db_session: AsyncSession) -> Optional[User]:
+    """DAL service that gets user by its email"""
+
+    async with db_session.begin():
+        query: Select = select(User).where(User.username == username)
+        result: Result = await db_session.execute(query)
+        data_from_result: Optional[Row] = result.fetchone()
+
+        if data_from_result is not None:
+            return data_from_result[0]

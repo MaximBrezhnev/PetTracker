@@ -2,12 +2,10 @@ import datetime
 import uuid
 from uuid import UUID
 
-from sqlalchemy import text, String
-from sqlalchemy.orm import Mapped, DeclarativeBase, mapped_column
+from sqlalchemy import text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-
-class Base(DeclarativeBase):
-    pass
+from src.database import Base
 
 
 class User(Base):
@@ -28,6 +26,8 @@ class User(Base):
     )
     is_active: Mapped[bool] = mapped_column(default=False)
     is_admin: Mapped[bool] = mapped_column(default=False)
+
+    pets = relationship("Pet", secondary="pet_user", back_populates="owners")
 
     def __repr__(self):
         return self.username

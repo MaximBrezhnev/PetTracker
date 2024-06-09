@@ -10,7 +10,7 @@ from jinja2 import Environment, FileSystemLoader
 from jose import jwt
 from pydantic import BaseModel, EmailStr
 
-from src.config import SECRET_KEY, EMAIL_CONF, FRONTEND_URL
+from src.config import SECRET_KEY, EMAIL_CONF, FRONTEND_URL, ALGORITHM
 from src.user.models import User
 
 
@@ -36,7 +36,7 @@ async def send_email(
     await fm.send_message(message=message)
 
 
-def _create_token_for_email_confirmation(email: str, instance: Optional[User]) -> str:
+def _create_token_for_email_confirmation(email: str, instance: Optional[User] = None) -> str:
     current_time: datetime = datetime.utcnow()
     expiration_time: datetime = current_time + timedelta(seconds=300)
 
@@ -49,7 +49,7 @@ def _create_token_for_email_confirmation(email: str, instance: Optional[User]) -
         if email != instance.email:
             token_data.update({"current_user_id": str(instance.user_id)})
 
-    token: str = jwt.encode(token_data, SECRET_KEY, algorithm="HS256")
+    token: str = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
     return token
 
 

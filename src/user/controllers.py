@@ -1,4 +1,5 @@
 from aiosmtplib import SMTPRecipientsRefused, SMTPDataError
+from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError
 from fastapi import Depends, HTTPException
 from fastapi.routing import APIRouter
@@ -7,11 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import status
 from starlette.responses import JSONResponse
 
-from src.dependencies import get_db_session
-from src.user.dependencies import oauth2_scheme, get_current_user
+from src.dependencies import get_db_session, oauth2_scheme, get_current_user
 from src.user.exceptions import email_sending_exception, credentials_exception
 from src.user.models import User
-from src.user.schemas import CreateUserDTO, ShowUserDTO, TokenDTO, LoginDTO, ChangeUsernameDTO, ChangePasswordDTO, \
+from src.user.schemas import CreateUserDTO, ShowUserDTO, TokenDTO, ChangeUsernameDTO, ChangePasswordDTO, \
     EmailDTO, ResetPasswordDTO
 from src.user.services.services import create_user_service, verify_email_service, \
     delete_user_service, login_service, refresh_token_service, change_username_service, change_password_service, \
@@ -57,12 +57,12 @@ async def verify_email(
         await verify_email_service(token, db_session)
         return JSONResponse(
             status_code=status.HTTP_200_OK,
-            content={"The email was verified successfully"}
+            content={"message": "The email was verified successfully"}
         )
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"message": "Cannot verified email"}
+            detail={"message": "Cannot verify email"}
         )
 
 
@@ -88,29 +88,28 @@ async def delete_user(
 
 @user_router.post(path="/auth/login", response_model=TokenDTO)
 async def login(
-        body: LoginDTO,
+        body: OAuth2PasswordRequestForm = Depends(),
         db_session: AsyncSession = Depends(get_db_session)) -> TokenDTO:
     """Controller for user authentication and authorization"""
 
     try:
-        token_data: dict = await login_service(body.email, body.password, db_session)
+        token_data: dict = await login_service(body.username, body.password, db_session)
         return TokenDTO(**token_data)
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"message": "Incorrect email or password"}
+            detail={"message": "Incorrect username or password"}
         )
 
 
 @user_router.post(path="/auth/refresh-token", response_model=TokenDTO)
-async def refresh_token(token: str = Depends(oauth2_scheme)) -> TokenDTO:
+async def refresh_token(
+        user: User = Depends(get_current_user),
+) -> TokenDTO:
     """Controller that refreshes access token"""
 
-    try:
-        token_data: dict = refresh_token_service(token)
-        return TokenDTO(**token_data)
-    except JWTError:
-        raise credentials_exception
+    token_data: dict = refresh_token_service(user)
+    return TokenDTO(**token_data)
 
 
 @user_router.patch(path='/change-username', response_model=ShowUserDTO)
@@ -211,14 +210,14 @@ async def reset_password(body: EmailDTO) -> JSONResponse:
         raise email_sending_exception
 
 
-@user_router.patch(path="auth/reset-password/confirmation", response_model=ShowUserDTO)
+@user_router.patch(path="/auth/reset-password/confirmation", response_model=ShowUserDTO)
 async def change_password_on_reset(
         body: ResetPasswordDTO,
         db_session: AsyncSession = Depends(get_db_session)) -> ShowUserDTO:
     """Controller that changes password on reset"""
 
     try:
-        updated_user: User = await change_password_on_reset_service(body.token, body.new_password1, db_session)
+        updated_user: User = await change_password_on_reset_service(body.token, body.password1, db_session)
         return updated_user
 
     except JWTError:
