@@ -27,7 +27,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(default=False)
     is_admin: Mapped[bool] = mapped_column(default=False)
 
-    pets = relationship("Pet", secondary="pet_user", back_populates="owners")
+    pets = relationship("Pet", back_populates="owner")
 
     def __repr__(self):
         return self.username

@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import select, update, Select, Result, Row, Update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.user.models import User
 
@@ -11,8 +12,11 @@ async def get_user_by_email(
         email: str, db_session: AsyncSession) -> Optional[User]:
     """DAL service that gets user by its email"""
 
-    async with db_session.begin():
-        query: Select = select(User).where(User.email == email)
+    async with (db_session.begin()):
+        query: Select = (
+            select(User).where(User.email == email)
+            .options(selectinload(User.pets))
+        )
         result: Result = await db_session.execute(query)
         data_from_result: Optional[Row] = result.fetchone()
 

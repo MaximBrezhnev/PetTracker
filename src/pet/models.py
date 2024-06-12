@@ -2,10 +2,11 @@ import datetime
 from enum import Enum
 import uuid
 
-from sqlalchemy import String, Enum as SQLAlchemyEnum, Table, Column, Integer, ForeignKey, text, UUID
+from sqlalchemy import String, Enum as SQLAlchemyEnum, ForeignKey, text, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
+from src.user.models import User  # noqa
 
 
 class PetGenderEnum(str, Enum):
@@ -31,26 +32,12 @@ class Pet(Base):
         server_default=text("TIMEZONE ('utc', now())"),
         onupdate=datetime.datetime.utcnow
     )
-    owners = relationship("User", secondary="pet_user", back_populates="pets")
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("user.user_id"))
+
+    owner = relationship("User", back_populates="pets")
+    events = relationship("Event", back_populates="pet")
 
     def __repr__(self):
         return self.name
 
-
-pet_user = Table(
-    "pet_user",
-    Base.metadata,
-    Column(
-        "user_id",
-        UUID,
-        ForeignKey("user.user_id"),
-        primary_key=True
-    ),
-    Column(
-        "pet_id",
-        UUID,
-        ForeignKey("pet.pet_id"),
-        primary_key=True
-    )
-)
 
