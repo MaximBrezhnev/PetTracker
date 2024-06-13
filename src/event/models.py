@@ -23,7 +23,6 @@ class Event(Base):
         onupdate=datetime.utcnow
     )
     pet_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pet.pet_id"))
-    is_edited: Mapped[bool] = mapped_column(default=False)
     is_happened: Mapped[bool] = mapped_column(default=False)
 
     pet = relationship("Pet", back_populates="events")

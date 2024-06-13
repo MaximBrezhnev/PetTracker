@@ -6,7 +6,7 @@ from starlette.responses import JSONResponse
 
 from src.dependencies import get_db_session, get_current_user
 from src.pet.models import Pet
-from src.pet.schemas import PetCreationDTO, ShowPetDetailDTO, UpdatePetDTO, ShowPetDTO
+from src.pet.schemas import PetCreationDTO, ShowPetInDetailDTO, UpdatePetDTO, ShowPetDTO
 from src.pet.services.services import add_pet_service, get_pet_service, get_list_of_pets_service, delete_pet_service, \
     update_pet_service
 from src.user.models import User
@@ -15,7 +15,7 @@ from src.user.models import User
 pet_router = APIRouter(prefix="/pet")
 
 
-@pet_router.post("/", response_model=ShowPetDetailDTO)
+@pet_router.post("/", response_model=ShowPetInDetailDTO)
 async def add_pet(
         body: PetCreationDTO,
         db_session: AsyncSession = Depends(get_db_session),
@@ -25,13 +25,13 @@ async def add_pet(
     return pet
 
 
-@pet_router.get("/", response_model=ShowPetDetailDTO)
+@pet_router.get("/", response_model=ShowPetInDetailDTO)
 async def get_pet(
         pet_id: str,
         db_session: AsyncSession = Depends(get_db_session),
         user: User = Depends(get_current_user)
-) -> Pet:
-    pet: Optional[Pet] = await get_pet_service(pet_id, db_session)
+) -> ShowPetInDetailDTO:
+    pet, events = await get_pet_service(pet_id, db_session)
 
     if pet is None:
         raise HTTPException(
@@ -39,7 +39,15 @@ async def get_pet(
             detail="Pet with this id not found"
         )
 
-    return pet
+    return ShowPetInDetailDTO(
+        pet_id=pet.pet_id,
+        name=pet.name,
+        species=pet.species,
+        breed=pet.breed,
+        gender=pet.gender,
+        weight=pet.weight,
+        events=events
+    )
 
 
 @pet_router.get("/list-of-pets", response_model=List[ShowPetDTO])
@@ -77,7 +85,7 @@ async def delete_pet(
         )
 
 
-@pet_router.patch("/", response_model=ShowPetDetailDTO)
+@pet_router.patch("/", response_model=ShowPetInDetailDTO)
 async def update_pet(
         pet_id: str,
         body: UpdatePetDTO,

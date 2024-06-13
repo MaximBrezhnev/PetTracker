@@ -5,11 +5,14 @@ from email.mime.text import MIMEText
 from uuid import UUID
 
 from celery import Celery
+from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import select, create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.event.models import Event
+from src.event.models import Event, TaskRecord
 
+import logging
+from datetime import datetime
 
 celery = Celery(__name__)
 celery.conf.broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:16379")  #
@@ -26,12 +29,34 @@ sync_engine = create_engine(
 )
 session = sessionmaker(sync_engine)
 
+# Объявление логирования
+logger = logging.getLogger('worker_logger')
+logger.setLevel(logging.DEBUG)
+
+file_handler = logging.FileHandler('worker.log')
+file_handler.setLevel(logging.DEBUG)
+
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+
+
+def log_event_not_found(identifier):
+    message = f"Событие с указанным идентификатором не найдено: {identifier}"
+    logger.info(message)
+
+
+def log_error(error_message):
+    logger.error(error_message)
+
 
 @celery.task(name="send_notification_email")
 def send_notification_email(
         email: str,
         body: dict,
         event_id: UUID,
+        task_id: UUID,
 ) -> None:
     db_session = session()
     try:
@@ -41,17 +66,21 @@ def send_notification_email(
             )
             event = result.scalars().first()
             if event is None:
-                return
-            if event.is_edited:
+                log_event_not_found(event_id)
                 return
 
             setattr(event, "is_happened", True)
             send_email_sync(
                 subject="Уведомление о событии (PetTracker)",
-                body="something",
+                body=get_template_for_event(body),
                 to_email=email
             )
-    except:
+
+            task_record = db_session.query(TaskRecord).\
+                filter_by(task_id=task_id).first()
+            db_session.delete(task_record)
+    except Exception as err:
+        log_error(err)
         return
     finally:
         db_session.close()
@@ -68,10 +97,19 @@ def send_email_sync(subject: str, body: str, to_email: str):
     msg['To'] = to_email
     msg['Subject'] = subject
 
-    msg.attach(MIMEText(body, 'plain'))
+    msg.attach(MIMEText(body, 'html'))
 
     server = smtplib.SMTP(smtp_server, smtp_port)
     server.starttls()
     server.login(from_email, from_password)
     server.sendmail(from_email, to_email, msg.as_string())
     server.quit()
+
+
+def get_template_for_event(data: dict) -> str:
+    templates_folder = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), 'event', 'templates')
+    )
+    env = Environment(loader=FileSystemLoader(templates_folder))
+    template = env.get_template("event_notification.html")
+    return template.render(**data)

@@ -21,6 +21,7 @@ class ShowEventDTO(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     event_id: UUID
+    pet_id: UUID
     title: str
     content: Optional[str] = None
     year: int
@@ -28,7 +29,7 @@ class ShowEventDTO(BaseModel):
     day: int
     hour: int
     minute: int
-    pet_id: UUID
+    is_happened: bool
 
 
 class UpdateEventDTO(EventValidationMixin, BaseModel):

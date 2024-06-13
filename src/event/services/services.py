@@ -1,12 +1,14 @@
+import uuid
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
 import pytz
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.event.models import Event
+from src.event.models import Event, TaskRecord
+from src.pet.models import Pet
 from src.pet.schemas import PetCreationDTO
 from src.user.models import User
 from src.worker import send_notification_email
@@ -37,40 +39,53 @@ async def create_event_service(
         )
         db_session.add(event)
         await db_session.flush()
-    """Настоящая версия"""
-    # msk_tz = pytz.timezone("Europe/Moscow")
-    # scheduled_at = msk_tz.localize(scheduled_at)
-    # send_notification_email.apply_async(
-    #     (
-    #         user.email,
-    #         {
-    #             "title": event.title,
-    #             "content": event.content,
-    #             "pet_id": str(event.pet_id),
-    #             "year": event.scheduled_at.year,
-    #             "month": event.scheduled_at.month,
-    #             "day": event.scheduled_at.day,
-    #             "hour": event.scheduled_at.hour,
-    #             "minute": event.scheduled_at.minute
-    #         },
-    #         str(event.event_id),
-    #     ),
-    #     eta=scheduled_at.astimezone(pytz.utc)
-    # )
-    """--------------------------------------------------"""
+
+        task_id = uuid.uuid4()
+        task_record = TaskRecord(task_id=task_id, event_id=event.event_id)
+        db_session.add(task_record)
+        await db_session.flush()
+
+        query = select(Pet).filter_by(pet_id=body.pet_id)
+        result = await db_session.execute(query)
+        pet = result.scalars().first()
+
+        """------------Настоящая версия-----------------------"""
+        # msk_tz = pytz.timezone("Europe/Moscow")
+        # scheduled_at = msk_tz.localize(scheduled_at)
+        # task = send_notification_email.apply_async(
+        #     (
+        #         user.email,
+        #         {
+        #             "title": event.title,
+        #             "content": event.content,
+        #             "pet_id": str(event.pet_id),
+        #             "year": event.scheduled_at.year,
+        #             "month": event.scheduled_at.month,
+        #             "day": event.scheduled_at.day,
+        #             "hour": event.scheduled_at.hour,
+        #             "minute": event.scheduled_at.minute
+        #         },
+        #         str(event.event_id),
+        #         str(task_id)
+        #     ),
+        #     eta=scheduled_at.astimezone(pytz.utc)
+        # )
+
+    """Болванка"""
     send_notification_email(
         user.email,
         {
             "title": event.title,
             "content": event.content,
-            "pet_id": str(event.pet_id),
+            "pet": pet.name,
             "year": event.scheduled_at.year,
             "month": event.scheduled_at.month,
             "day": event.scheduled_at.day,
             "hour": event.scheduled_at.hour,
-            "minute": event.scheduled_at.minute
+            "minute": event.scheduled_at.minute,
         },
         str(event.event_id),
+        str(task_id)
     )
 
     return {
@@ -82,7 +97,8 @@ async def create_event_service(
         "month": event.scheduled_at.month,
         "day": event.scheduled_at.day,
         "hour": event.scheduled_at.hour,
-        "minute": event.scheduled_at.minute
+        "minute": event.scheduled_at.minute,
+        "is_happened": event.is_happened,
     }
 
 
@@ -110,7 +126,8 @@ async def get_event_service(
                     "month": event.scheduled_at.month,
                     "day": event.scheduled_at.day,
                     "hour": event.scheduled_at.hour,
-                    "minute": event.scheduled_at.minute
+                    "minute": event.scheduled_at.minute,
+                    "is_happened": event.is_happened,
                 }
     return
 
@@ -122,10 +139,9 @@ async def get_list_of_events_service(user, db_session) -> dict:
             result = await db_session.execute(
                 select(Event).filter(
                     Event.pet_id == p.pet_id,
-                )
+                ).order_by(desc(Event.scheduled_at))
             )
             pet_events = result.scalars().all()
-            print(pet_events)
             if pet_events:
                 events.extend(pet_events)
 
@@ -139,7 +155,8 @@ async def get_list_of_events_service(user, db_session) -> dict:
             "month": event.scheduled_at.month,
             "day": event.scheduled_at.day,
             "hour": event.scheduled_at.hour,
-            "minute": event.scheduled_at.minute
+            "minute": event.scheduled_at.minute,
+            "is_happened": event.is_happened,
         }
 
     return events
@@ -174,7 +191,6 @@ async def update_event_service(
             )
             event = result.scalars().first()
             if event is not None:
-                setattr(event, "is_edited", True)
                 scheduled_at = event.scheduled_at
 
                 for key, value in parameters_for_update.items():
@@ -193,9 +209,10 @@ async def update_event_service(
 
                 setattr(event, "scheduled_at", scheduled_at)
 
+                task_id = uuid.uuid4()
                 # msk_tz = pytz.timezone("Europe/Moscow")
                 # scheduled_at = msk_tz.localize(scheduled_at)
-                # send_notification_email.apply_async(
+                # task = send_notification_email.apply_async(
                 #     (
                 #         user.email,
                 #         {
@@ -209,10 +226,23 @@ async def update_event_service(
                 #             "minute": event.scheduled_at.minute
                 #         },
                 #         str(event.event_id),
+                #         str(task_id)
                 #     ),
                 #     eta=scheduled_at.astimezone(pytz.utc)
                 # )
+                # # Посмотреть другие варианты получения объекта
+                # task_records = await db_session.query(TaskRecord).\
+                #     filter_by(event_id=event.event_id).all()
+                # for t_r in task_records:
+                #     db_session.delete(t_r)
+                # task_record = TaskRecord(
+                #     task_id=task.id,
+                #     event_id=event.event_id
+                # )
+                # db_session.add(task_record)
+                # await db_session.flush()
 
+                """Болванка"""
                 send_notification_email(
                     user.email,
                     {
@@ -226,6 +256,7 @@ async def update_event_service(
                         "minute": event.scheduled_at.minute
                     },
                     str(event.event_id),
+                    str(task_id)
                 )
 
                 return {
@@ -237,7 +268,8 @@ async def update_event_service(
                     "month": event.scheduled_at.month,
                     "day": event.scheduled_at.day,
                     "hours": event.scheduled_at.hour,
-                    "minute": event.scheduled_at.minute
+                    "minute": event.scheduled_at.minute,
+                    "is_happened": event.is_happened,
                 }
 
     return

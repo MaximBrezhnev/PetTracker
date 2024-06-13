@@ -2,7 +2,9 @@ from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, ConfigDict
+from typing import List
 
+from src.event.schemas import ShowEventDTO
 from src.pet.mixins import PetValidationMixin
 from src.pet.models import PetGenderEnum
 
@@ -20,7 +22,7 @@ class ShowPetDTO(BaseModel):
     name: str
 
 
-class ShowPetDetailDTO(BaseModel):
+class ShowPetInDetailDTO(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     pet_id: UUID
@@ -29,6 +31,7 @@ class ShowPetDetailDTO(BaseModel):
     breed: Optional[str] = None
     gender: PetGenderEnum
     weight: Optional[float] = None
+    events: List[ShowEventDTO] = None
 
 
 class UpdatePetDTO(PetValidationMixin, BaseModel):

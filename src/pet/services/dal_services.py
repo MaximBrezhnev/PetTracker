@@ -2,6 +2,7 @@ from typing import Optional, List
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.pet.models import Pet
 from src.pet.schemas import PetCreationDTO
@@ -28,7 +29,8 @@ async def create_pet(body: PetCreationDTO, user: User, db_session: AsyncSession)
 async def get_pet(pet_id: str, db_session: AsyncSession) -> Optional[Pet]:
     async with db_session.begin():
         result = await db_session.execute(
-            select(Pet).filter(Pet.pet_id == pet_id)
+            select(Pet).filter(Pet.pet_id == pet_id).
+            options(selectinload(Pet.events))
         )
 
     return result.scalars().first()

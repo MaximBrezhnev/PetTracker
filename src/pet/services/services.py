@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,9 +14,29 @@ async def add_pet_service(body: PetCreationDTO, user: User, db_session: AsyncSes
     return pet
 
 
-async def get_pet_service(pet_id, db_session: AsyncSession) -> Optional[Pet]:
+async def get_pet_service(
+        pet_id,
+        db_session: AsyncSession
+) -> Optional[Tuple[Pet, List[dict]]]:
     pet: Optional[Pet] = await get_pet(pet_id, db_session)
-    return pet
+
+    events = []
+    for event in pet.events:
+        events.append(
+            {
+                "event_id": event.event_id,
+                "title": event.title,
+                "content": event.content,
+                "pet_id": event.pet_id,
+                "year": event.scheduled_at.year,
+                "month": event.scheduled_at.month,
+                "day": event.scheduled_at.day,
+                "hour": event.scheduled_at.hour,
+                "minute": event.scheduled_at.minute,
+                "is_happened": event.is_happened,
+            }
+        )
+    return pet, events
 
 
 async def get_list_of_pets_service(
