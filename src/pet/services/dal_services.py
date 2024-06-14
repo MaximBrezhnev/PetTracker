@@ -50,7 +50,7 @@ async def delete_pet(pet: Pet, db_session: AsyncSession) -> None:
         await db_session.delete(pet)
 
 
-async def update_pet(pet, parameters_for_update, db_session) -> Pet:
+async def update_pet(pet: Pet, parameters_for_update: dict, db_session: AsyncSession) -> Pet:
     async with db_session.begin():
         for key, value in parameters_for_update.items():
             setattr(pet, key, value)

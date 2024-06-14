@@ -4,14 +4,17 @@ from typing import Optional
 from uuid import UUID
 
 import pytz
-from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List
 
-from src.event.models import Event, TaskRecord
+from src.event.models import Event
+from src.event.services.dal_services import create_event_in_database, create_task_in_database, \
+    get_pet_from_database_by_id, get_event_from_database_by_id, get_events_from_database_by_user, \
+    delete_event_from_database, update_event_in_database, delete_invalid_tasks_from_database
 from src.pet.models import Pet
 from src.pet.schemas import PetCreationDTO
 from src.user.models import User
-from src.worker import send_notification_email
+from src.background_worker.celery_tasks import send_notification_email
 
 
 async def create_event_service(
@@ -30,68 +33,132 @@ async def create_event_service(
         year=body.year
     )
 
-    async with db_session.begin():
-        event = Event(
-            title=body.title,
-            content=body.content,
-            scheduled_at=scheduled_at,
-            pet_id=body.pet_id
-        )
-        db_session.add(event)
-        await db_session.flush()
-
-        task_id = uuid.uuid4()
-        task_record = TaskRecord(task_id=task_id, event_id=event.event_id)
-        db_session.add(task_record)
-        await db_session.flush()
-
-        query = select(Pet).filter_by(pet_id=body.pet_id)
-        result = await db_session.execute(query)
-        pet = result.scalars().first()
-
-        """------------Настоящая версия-----------------------"""
-        # msk_tz = pytz.timezone("Europe/Moscow")
-        # scheduled_at = msk_tz.localize(scheduled_at)
-        # task = send_notification_email.apply_async(
-        #     (
-        #         user.email,
-        #         {
-        #             "title": event.title,
-        #             "content": event.content,
-        #             "pet_id": str(event.pet_id),
-        #             "year": event.scheduled_at.year,
-        #             "month": event.scheduled_at.month,
-        #             "day": event.scheduled_at.day,
-        #             "hour": event.scheduled_at.hour,
-        #             "minute": event.scheduled_at.minute
-        #         },
-        #         str(event.event_id),
-        #         str(task_id)
-        #     ),
-        #     eta=scheduled_at.astimezone(pytz.utc)
-        # )
-
-    """Болванка"""
-    send_notification_email(
-        user.email,
-        {
-            "title": event.title,
-            "content": event.content,
-            "pet": pet.name,
-            "year": event.scheduled_at.year,
-            "month": event.scheduled_at.month,
-            "day": event.scheduled_at.day,
-            "hour": event.scheduled_at.hour,
-            "minute": event.scheduled_at.minute,
-        },
-        str(event.event_id),
-        str(task_id)
+    event: Event = await create_event_in_database(
+        title=body.title,
+        content=body.content,
+        pet_id=body.pet_id,
+        scheduled_at=scheduled_at,
+        db_session=db_session
     )
 
-    return {
+    pet: Pet = await get_pet_from_database_by_id(
+        pet_id=body.pet_id, db_session=db_session
+    )
+    if pet is None:
+        return
+
+    await _send_task_to_celery(event, user, pet, scheduled_at, db_session)
+    return _form_event_data(event=event, is_detailed=True)
+
+
+async def get_event_service(
+        event_id: UUID,
+        user: User,
+        db_session: AsyncSession
+) -> Optional[Event]:
+    event: Optional[Event] = get_event_from_database_by_id(
+        event_id=event_id,
+        user=user,
+        db_session=db_session
+    )
+    if event is not None:
+        return _form_event_data(event=event, is_detailed=True)
+
+
+async def get_list_of_events_service(
+        user: User,
+        db_session: AsyncSession
+) -> dict:
+    events: List[Event] = await get_events_from_database_by_user(
+        user=user, db_session=db_session
+    )
+
+    for e in range(len(events)):
+        events[e] = _form_event_data(
+            event=events[e], is_detailed=False
+        )
+
+    return events
+
+
+async def delete_event_service(
+        event_id: UUID,
+        user: User,
+        db_session: AsyncSession
+) -> Optional[UUID]:
+    event: Optional[Event] = await get_event_from_database_by_id(
+        event_id=event_id, user=user, db_session=db_session
+    )
+
+    if event is not None:
+        await delete_event_from_database(event, db_session)
+        return event.event_id
+
+
+async def update_event_service(
+        event_id: UUID,
+        parameters_for_update: dict,
+        user: User,
+        db_session: AsyncSession
+) -> dict:
+    event: Optional[Event] = await get_event_from_database_by_id(
+        event_id=event_id, user=user, db_session=db_session
+    )
+
+    if event is not None:
+        updated_event: Event = await update_event_in_database(
+            event=event, parameters_for_update=parameters_for_update, db_session=db_session
+        )
+
+        await delete_invalid_tasks_from_database(event=event, db_session=db_session)
+
+        pet: Pet = await get_pet_from_database_by_id(
+            pet_id=updated_event.pet_id, db_session=db_session
+        )
+        if pet is None:
+            return
+
+        await _send_task_to_celery(updated_event, user, pet, updated_event.scheduled_at, db_session)
+        return _form_event_data(event=updated_event, is_detailed=True)
+
+
+def _create_task(
+        scheduled_at: datetime,
+        event: Event,
+        user: User,
+        pet: Pet,
+        task_id: UUID
+) -> None:
+    msk_tz = pytz.timezone("Europe/Moscow")
+    scheduled_at = msk_tz.localize(scheduled_at)
+
+    send_notification_email.apply_async(
+        (
+            user.email,
+            {
+                "title": event.title,
+                "content": event.content,
+                "pet": pet.name,
+                "year": event.scheduled_at.year,
+                "month": event.scheduled_at.month,
+                "day": event.scheduled_at.day,
+                "hour": event.scheduled_at.hour,
+                "minute": event.scheduled_at.minute
+            },
+            str(event.event_id),
+            str(task_id)
+        ),
+        eta=scheduled_at.astimezone(pytz.utc)
+    )
+
+
+def _form_event_data(
+        event: Event,
+        is_detailed: bool
+) -> dict:
+    event_data = {
         "event_id": event.event_id,
         "title": event.title,
-        "content": event.content,
         "pet_id": event.pet_id,
         "year": event.scheduled_at.year,
         "month": event.scheduled_at.month,
@@ -101,175 +168,30 @@ async def create_event_service(
         "is_happened": event.is_happened,
     }
 
+    if is_detailed:
+        event_data.update(
+            {"content": event.content}
+        )
 
-async def get_event_service(
-        event_id: UUID,
+    return event_data
+
+
+async def _send_task_to_celery(
+        event: Event,
         user: User,
+        pet: Pet,
+        scheduled_at: datetime,
         db_session: AsyncSession
-) -> Optional[Event]:
-    async with db_session.begin():
-        for p in user.pets:
-            result = await db_session.execute(
-                select(Event).filter(
-                    Event.pet_id == p.pet_id,
-                    Event.event_id == event_id
-                )
-            )
-            event = result.scalars().first()
-            if event is not None:
-                return {
-                    "event_id": event.event_id,
-                    "title": event.title,
-                    "content": event.content,
-                    "pet_id": event.pet_id,
-                    "year": event.scheduled_at.year,
-                    "month": event.scheduled_at.month,
-                    "day": event.scheduled_at.day,
-                    "hour": event.scheduled_at.hour,
-                    "minute": event.scheduled_at.minute,
-                    "is_happened": event.is_happened,
-                }
-    return
+) -> None:
+    task_id: UUID = await create_task_in_database(
+        event=event, db_session=db_session
+    )
 
+    _create_task(
+        scheduled_at=scheduled_at,
+        event=event,
+        user=user,
+        pet=pet,
+        task_id=task_id
+    )
 
-async def get_list_of_events_service(user, db_session) -> dict:
-    async with db_session.begin():
-        events = []
-        for p in user.pets:
-            result = await db_session.execute(
-                select(Event).filter(
-                    Event.pet_id == p.pet_id,
-                ).order_by(desc(Event.scheduled_at))
-            )
-            pet_events = result.scalars().all()
-            if pet_events:
-                events.extend(pet_events)
-
-    for e in range(len(events)):
-        event = events[e]
-        events[e] = {
-            "event_id": event.event_id,
-            "title": event.title,
-            "pet_id": event.pet_id,
-            "year": event.scheduled_at.year,
-            "month": event.scheduled_at.month,
-            "day": event.scheduled_at.day,
-            "hour": event.scheduled_at.hour,
-            "minute": event.scheduled_at.minute,
-            "is_happened": event.is_happened,
-        }
-
-    return events
-
-
-async def delete_event_service(event_id, user, db_session) -> None:
-    async with db_session.begin():
-        for p in user.pets:
-            result = await db_session.execute(
-                select(Event).filter(
-                    Event.pet_id == p.pet_id,
-                    Event.event_id == event_id
-                )
-            )
-            event = result.scalars().first()
-            if event is not None:
-                await db_session.delete(event)
-                return event.event_id
-    return
-
-
-async def update_event_service(
-        event_id, parameters_for_update, user, db_session
-) -> dict:
-    async with db_session.begin():
-        for p in user.pets:
-            result = await db_session.execute(
-                select(Event).filter(
-                    Event.pet_id == p.pet_id,
-                    Event.event_id == event_id
-                )
-            )
-            event = result.scalars().first()
-            if event is not None:
-                scheduled_at = event.scheduled_at
-
-                for key, value in parameters_for_update.items():
-                    if key == "year":
-                        scheduled_at = scheduled_at.replace(year=value)
-                    elif key == "month":
-                        scheduled_at = scheduled_at.replace(month=value)
-                    elif key == "day":
-                        scheduled_at = scheduled_at.replace(day=value)
-                    elif key == "hours":
-                        scheduled_at = scheduled_at.replace(hour=value)
-                    elif key == "minutes":
-                        scheduled_at = scheduled_at.replace(minute=value)
-                    else:
-                        setattr(event, key, value)
-
-                setattr(event, "scheduled_at", scheduled_at)
-
-                task_id = uuid.uuid4()
-                # msk_tz = pytz.timezone("Europe/Moscow")
-                # scheduled_at = msk_tz.localize(scheduled_at)
-                # task = send_notification_email.apply_async(
-                #     (
-                #         user.email,
-                #         {
-                #             "title": event.title,
-                #             "content": event.content,
-                #             "pet_id": str(event.pet_id),
-                #             "year": event.scheduled_at.year,
-                #             "month": event.scheduled_at.month,
-                #             "day": event.scheduled_at.day,
-                #             "hour": event.scheduled_at.hour,
-                #             "minute": event.scheduled_at.minute
-                #         },
-                #         str(event.event_id),
-                #         str(task_id)
-                #     ),
-                #     eta=scheduled_at.astimezone(pytz.utc)
-                # )
-                # # Посмотреть другие варианты получения объекта
-                # task_records = await db_session.query(TaskRecord).\
-                #     filter_by(event_id=event.event_id).all()
-                # for t_r in task_records:
-                #     db_session.delete(t_r)
-                # task_record = TaskRecord(
-                #     task_id=task.id,
-                #     event_id=event.event_id
-                # )
-                # db_session.add(task_record)
-                # await db_session.flush()
-
-                """Болванка"""
-                send_notification_email(
-                    user.email,
-                    {
-                        "title": event.title,
-                        "content": event.content,
-                        "pet_id": str(event.pet_id),
-                        "year": event.scheduled_at.year,
-                        "month": event.scheduled_at.month,
-                        "day": event.scheduled_at.day,
-                        "hour": event.scheduled_at.hour,
-                        "minute": event.scheduled_at.minute
-                    },
-                    str(event.event_id),
-                    str(task_id)
-                )
-
-                return {
-                    "event_id": event.event_id,
-                    "title": event.title,
-                    "content": event.content,
-                    "pet_id": event.pet_id,
-                    "year": event.scheduled_at.year,
-                    "month": event.scheduled_at.month,
-                    "day": event.scheduled_at.day,
-                    "hours": event.scheduled_at.hour,
-                    "minute": event.scheduled_at.minute,
-                    "is_happened": event.is_happened,
-                }
-
-    return
