@@ -25,7 +25,6 @@ class User(Base):
         onupdate=datetime.datetime.utcnow
     )
     is_active: Mapped[bool] = mapped_column(default=False)
-    is_admin: Mapped[bool] = mapped_column(default=False)
 
     pets = relationship("Pet", back_populates="owner")
 

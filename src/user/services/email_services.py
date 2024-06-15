@@ -2,20 +2,13 @@ import os
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import (BackgroundTasks, UploadFile, File, Form,
-                     Depends, HTTPException, status)  # noqa
-
 from fastapi_mail import FastMail, MessageSchema
 from jinja2 import Environment, FileSystemLoader
 from jose import jwt
-from pydantic import BaseModel, EmailStr
+from pydantic import EmailStr
 
 from src.config import SECRET_KEY, EMAIL_CONF, FRONTEND_URL, ALGORITHM
 from src.user.models import User
-
-
-class EmailSchema(BaseModel):
-    email: List[EmailStr]
 
 
 async def send_email(

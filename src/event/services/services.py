@@ -1,4 +1,3 @@
-import uuid
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -14,7 +13,7 @@ from src.event.services.dal_services import create_event_in_database, create_tas
 from src.pet.models import Pet
 from src.pet.schemas import PetCreationDTO
 from src.user.models import User
-from src.background_worker.celery_tasks import send_notification_email
+from src.background_worker.celery import send_notification_email
 
 
 async def create_event_service(
@@ -47,7 +46,9 @@ async def create_event_service(
     if pet is None:
         return
 
-    await _send_task_to_celery(event, user, pet, scheduled_at, db_session)
+    await _send_task_to_celery(
+        event, user, pet, scheduled_at, db_session, body.timezone
+    )
     return _form_event_data(event=event, is_detailed=True)
 
 
@@ -118,7 +119,14 @@ async def update_event_service(
         if pet is None:
             return
 
-        await _send_task_to_celery(updated_event, user, pet, updated_event.scheduled_at, db_session)
+        await _send_task_to_celery(
+            updated_event,
+            user,
+            pet,
+            updated_event.scheduled_at,
+            db_session,
+            parameters_for_update.get("timezone")
+        )
         return _form_event_data(event=updated_event, is_detailed=True)
 
 
@@ -127,9 +135,10 @@ def _create_task(
         event: Event,
         user: User,
         pet: Pet,
-        task_id: UUID
+        task_id: UUID,
+        timezone: str
 ) -> None:
-    msk_tz = pytz.timezone("Europe/Moscow")
+    msk_tz = pytz.timezone(timezone)
     scheduled_at = msk_tz.localize(scheduled_at)
 
     send_notification_email.apply_async(
@@ -181,7 +190,8 @@ async def _send_task_to_celery(
         user: User,
         pet: Pet,
         scheduled_at: datetime,
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        timezone: str
 ) -> None:
     task_id: UUID = await create_task_in_database(
         event=event, db_session=db_session
@@ -192,6 +202,7 @@ async def _send_task_to_celery(
         event=event,
         user=user,
         pet=pet,
-        task_id=task_id
+        task_id=task_id,
+        timezone=timezone
     )
 

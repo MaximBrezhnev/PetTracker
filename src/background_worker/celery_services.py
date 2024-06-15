@@ -13,10 +13,22 @@ from src.event.models import Event, TaskRecord
 
 
 sync_engine = create_engine(
-    url="postgresql+psycopg://postgres:postgres@localhost:15432/postgres",  #
+    url="postgresql+psycopg://postgres:postgres@db:5432/postgres",  #
     echo=False,
 )
 session = sessionmaker(sync_engine)
+
+
+def get_task_record_from_database(
+        task_id: str,
+        db_session: Session
+) -> Optional[TaskRecord]:
+    with db_session.begin():
+        result = db_session.execute(
+            select(TaskRecord).filter_by(task_id=task_id)
+        )
+
+        return result.scalars().first()
 
 
 def get_event_from_database(event_id: UUID, db_session: Session) -> Optional[Event]:
@@ -62,11 +74,9 @@ def get_template_for_event(data: dict) -> str:
     return template.render(**data)
 
 
-def delete_completed_task(task_id: UUID, db_session: Session) -> None:
+def delete_completed_task(
+        task_record: TaskRecord,
+        db_session: Session
+) -> None:
     with db_session.begin():
-        task_record = db_session.execute(
-            select(TaskRecord).
-            filter_by(task_id=task_id)
-        ).scalars().first()
-
         db_session.delete(task_record)

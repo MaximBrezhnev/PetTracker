@@ -7,7 +7,7 @@ from starlette.responses import JSONResponse
 
 from src.dependencies import get_current_user, get_db_session
 from src.event.schemas import ShowEventDTO, EventCreationDTO, UpdateEventDTO
-from src.event.services import create_event_service, get_event_service, get_list_of_events_service, \
+from src.event.services.services import create_event_service, get_event_service, get_list_of_events_service, \
     delete_event_service, update_event_service
 from src.user.models import User
 
@@ -96,7 +96,7 @@ async def update_event(
         db_session: AsyncSession = Depends(get_db_session)
 ) -> dict:
     parameters_for_update = body.dict(exclude_none=True)
-    if not parameters_for_update:
+    if len(parameters_for_update) == 1:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="At least one parameter must be provided"

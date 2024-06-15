@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 
 from pydantic import BaseModel, EmailStr, ConfigDict
 
@@ -57,3 +57,8 @@ class ResetPasswordDTO(PasswordValidationMixin, BaseModel):
     token: str
     password1: str
     password2: str
+
+
+class EmailSchema(BaseModel):
+    """Model that represents schema for sending email"""
+    email: List[EmailStr]

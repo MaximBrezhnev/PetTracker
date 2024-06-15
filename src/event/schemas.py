@@ -14,6 +14,8 @@ class EventCreationDTO(EventValidationMixin, BaseModel):
     day: int
     hour: int
     minute: int
+
+    timezone: str
     pet_id: UUID
 
 
@@ -33,11 +35,13 @@ class ShowEventDTO(BaseModel):
 
 
 class UpdateEventDTO(EventValidationMixin, BaseModel):
-    title: Optional[str] = Field(..., min_length=1, max_length=100)
+    title: Optional[str] = Field(None, min_length=1, max_length=100)
     content: Optional[str] = Field(None,  min_length=1, max_length=300)
     year: Optional[int] = None
     month: Optional[int] = None
     day: Optional[int] = None
     hour: Optional[int] = None
     minute: Optional[int] = None
+
+    timezone: str
 

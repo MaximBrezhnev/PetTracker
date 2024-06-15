@@ -117,9 +117,9 @@ async def update_event_in_database(
                 scheduled_at = scheduled_at.replace(month=value)
             elif key == "day":
                 scheduled_at = scheduled_at.replace(day=value)
-            elif key == "hours":
+            elif key == "hour":
                 scheduled_at = scheduled_at.replace(hour=value)
-            elif key == "minutes":
+            elif key == "minute":
                 scheduled_at = scheduled_at.replace(minute=value)
             else:
                 setattr(event, key, value)
