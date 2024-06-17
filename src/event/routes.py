@@ -2,27 +2,29 @@ from typing import Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse
 
-from src.dependencies import get_current_user, get_db_session
+from src.dependencies import get_current_user
 from src.event.schemas import ShowEventSchema, EventCreationSchema, UpdateEventSchema
-from src.event.services.services import create_event_service, get_event_service, get_list_of_events_service, \
-    delete_event_service, update_event_service
+from src.event.services.services2 import EventService
 from src.user.models import User
+from src.event.dependencies import get_event_service
 
 
-event_router = APIRouter(prefix="/event")
+event_router = APIRouter(
+    prefix="/event",
+    tags=["event"]
+)
 
 
 @event_router.post(path="/", response_model=ShowEventSchema)
 async def create_event(
         body: EventCreationSchema,
         user: User = Depends(get_current_user),
-        db_session: AsyncSession = Depends(get_db_session)
+        event_service: EventService = Depends(get_event_service)
 ) -> ShowEventSchema:
-    event_data: Optional[dict] = await create_event_service(
-        body, user, db_session
+    event_data: Optional[dict] = await event_service.create_event(
+        user=user, **body.dict()
     )
 
     if event_data is None:
@@ -38,9 +40,9 @@ async def create_event(
 async def get_event(
         event_id: UUID,
         user: User = Depends(get_current_user),
-        db_session: AsyncSession = Depends(get_db_session)
+        event_service: EventService = Depends(get_event_service)
 ) -> ShowEventSchema:
-    event_data: Optional[dict] = await get_event_service(event_id, user, db_session)
+    event_data: Optional[dict] = await event_service.create_event(event_id, user)
 
     if event_data is None:
         raise HTTPException(
@@ -54,10 +56,10 @@ async def get_event(
 @event_router.get(path="/list-of-events", response_model=List[ShowEventSchema])
 async def get_list_of_events(
         user: User = Depends(get_current_user),
-        db_session: AsyncSession = Depends(get_db_session)
+        event_service: EventService = Depends(get_event_service)
 ) -> List[dict]:
 
-    events_data: list = await get_list_of_events_service(user, db_session)
+    events_data: list = await event_service.get_list_of_events(user=user)
 
     if not events_data:
         raise HTTPException(
@@ -72,9 +74,9 @@ async def get_list_of_events(
 async def delete_event(
         event_id: UUID,
         user: User = Depends(get_current_user),
-        db_session: AsyncSession = Depends(get_db_session)
+        event_service: EventService = Depends(get_list_of_events)
 ) -> JSONResponse:
-    deleted_event_id = await delete_event_service(event_id, user, db_session)
+    deleted_event_id = await event_service.delete_event(event_id=event_id, user=user)
 
     if deleted_event_id is None:
         raise HTTPException(
@@ -93,7 +95,7 @@ async def update_event(
         event_id: UUID,
         body: UpdateEventSchema,
         user: User = Depends(get_current_user),
-        db_session: AsyncSession = Depends(get_db_session)
+        event_service: EventService = Depends(get_event_service)
 ) -> dict:
     parameters_for_update = body.dict(exclude_none=True)
     if len(parameters_for_update) == 1:
@@ -102,8 +104,8 @@ async def update_event(
             detail="At least one parameter must be provided"
         )
 
-    updated_event = await update_event_service(
-        event_id, parameters_for_update, user, db_session
+    updated_event = await event_service.update_event(
+        event_id, parameters_for_update, user
     )
 
     if not updated_event:
@@ -113,4 +115,3 @@ async def update_event(
         )
 
     return updated_event
-

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
 from src.user.models import User
-from src.user.schemas import CreateUserDTO, ChangePasswordDTO
+from src.user.schemas import CreateUserSchema, ChangePasswordSchema
 from src.user.services.auth_services import check_password, create_jwt_token, get_email_from_token, get_password_hash
 from src.user.services.dal_services import get_user_by_email, update_username_and_password, create_new_user, \
     update_user_upon_verification, get_user_by_user_id, delete_user, change_username, \
@@ -14,7 +14,7 @@ from src.user.services.dal_services import get_user_by_email, update_username_an
 from src.user.services.email_services import send_email
 
 
-async def create_user_service(body: CreateUserDTO, db_session: AsyncSession) -> None:
+async def create_user_service(body: CreateUserSchema, db_session: AsyncSession) -> None:
     """Service for create_user controller"""
 
     user: Optional[User] = await get_user_by_email(body.email, db_session)
@@ -112,7 +112,7 @@ async def change_username_service(user: User, new_username: str, db_session: Asy
 
 async def change_password_service(
         user: User,
-        body: ChangePasswordDTO,
+        body: ChangePasswordSchema,
         db_session: AsyncSession) -> User:
     """Service for change_password controller"""
 

@@ -3,10 +3,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.event.mixins import EventValidationMixin
+from src.event.schema_mixins import EventValidationMixin
 
 
-class EventCreationDTO(EventValidationMixin, BaseModel):
+class EventCreationSchema(EventValidationMixin, BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
     content: Optional[str] = Field(None,  min_length=1, max_length=300)
     year: int
@@ -19,7 +19,7 @@ class EventCreationDTO(EventValidationMixin, BaseModel):
     pet_id: UUID
 
 
-class ShowEventDTO(BaseModel):
+class ShowEventSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     event_id: UUID
@@ -34,7 +34,7 @@ class ShowEventDTO(BaseModel):
     is_happened: bool
 
 
-class UpdateEventDTO(EventValidationMixin, BaseModel):
+class UpdateEventSchema(EventValidationMixin, BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=100)
     content: Optional[str] = Field(None,  min_length=1, max_length=300)
     year: Optional[int] = None

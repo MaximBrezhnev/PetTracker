@@ -2,10 +2,10 @@ from typing import Optional, List
 
 from pydantic import BaseModel, EmailStr, ConfigDict
 
-from src.user.mixins import UsernameValidationMixin, PasswordValidationMixin
+from src.user.schema_mixins import UsernameValidationMixin, PasswordValidationMixin
 
 
-class CreateUserDTO(UsernameValidationMixin, PasswordValidationMixin, BaseModel):
+class CreateUserSchema(UsernameValidationMixin, PasswordValidationMixin, BaseModel):
     """Model that represents data for registration"""
 
     username: str
@@ -14,7 +14,7 @@ class CreateUserDTO(UsernameValidationMixin, PasswordValidationMixin, BaseModel)
     password2: str
 
 
-class ShowUserDTO(BaseModel):
+class ShowUserSchema(BaseModel):
     """Model that represents data for user displaying"""
 
     model_config = ConfigDict(from_attributes=True)
@@ -23,7 +23,7 @@ class ShowUserDTO(BaseModel):
     email: EmailStr
 
 
-class TokenDTO(BaseModel):
+class TokenSchema(BaseModel):
     """Model that represents data for authorization"""
 
     access_token: str
@@ -31,13 +31,13 @@ class TokenDTO(BaseModel):
     token_type: str
 
 
-class ChangeUsernameDTO(UsernameValidationMixin, BaseModel):
+class ChangeUsernameSchema(UsernameValidationMixin, BaseModel):
     """Model that represents data for username change"""
 
     username: str
 
 
-class ChangePasswordDTO(PasswordValidationMixin, BaseModel):
+class ChangePasswordSchema(PasswordValidationMixin, BaseModel):
     """Model that represents data for password change"""
 
     old_password: str
@@ -45,20 +45,15 @@ class ChangePasswordDTO(PasswordValidationMixin, BaseModel):
     password2: str
 
 
-class EmailDTO(BaseModel):
+class EmailSchema(BaseModel):
     """Model that represents data with password reset email"""
 
     email: EmailStr
 
 
-class ResetPasswordDTO(PasswordValidationMixin, BaseModel):
+class ResetPasswordSchema(PasswordValidationMixin, BaseModel):
     """Model that represents data for password reset"""
 
     token: str
     password1: str
     password2: str
-
-
-class EmailSchema(BaseModel):
-    """Model that represents schema for sending email"""
-    email: List[EmailStr]

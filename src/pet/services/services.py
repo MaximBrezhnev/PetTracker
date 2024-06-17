@@ -4,12 +4,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.pet.models import Pet
-from src.pet.schemas import PetCreationDTO
+from src.pet.schemas import PetCreationSchema
 from src.pet.services.dal_services import create_pet, get_pet, get_pets, delete_pet, update_pet
 from src.user.models import User
 
 
-async def add_pet_service(body: PetCreationDTO, user: User, db_session: AsyncSession) -> Pet:
+async def add_pet_service(body: PetCreationSchema, user: User, db_session: AsyncSession) -> Pet:
     pet: Pet = await create_pet(body, user, db_session)
     return pet
 

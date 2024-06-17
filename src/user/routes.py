@@ -4,34 +4,40 @@ from jose import JWTError
 from fastapi import Depends, HTTPException
 from fastapi.routing import APIRouter
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import status
 from starlette.responses import JSONResponse
 
-from src.dependencies import get_db_session, get_current_user
+from src.dependencies import get_current_user
 from src.exceptions import email_sending_exception
+from src.user.dependencies import get_user_service
 from src.user.models import User
-from src.user.schemas import CreateUserSchema, ShowUserSchema, TokenSchema, ChangeUsernameSchema, ChangePasswordSchema, \
-    EmailSchema, ResetPasswordSchema
-from src.user.services.services import create_user_service, verify_email_service, \
-    delete_user_service, login_service, refresh_token_service, change_username_service, change_password_service, \
-    change_email_service, confirm_email_change_service, reset_password_service, change_password_on_reset_service
+from src.user.schemas import CreateUserSchema, ShowUserSchema, TokenSchema, ChangeUsernameSchema, \
+    ChangePasswordSchema, EmailSchema, ResetPasswordSchema
+from src.user.services.services2 import UserService
 
 
-user_router = APIRouter(prefix="/user")
+user_router = APIRouter(
+    prefix="/user",
+    tags=["user", ]
+)
 
 
 @user_router.post(path="/")
 async def create_user(
         body: CreateUserSchema,
-        db_session: AsyncSession = Depends(get_db_session)) -> JSONResponse:
+        user_service: UserService = Depends(get_user_service)
+) -> JSONResponse:
     """
     Controller that creates inactive user. If inactive user with this email exists,
     it updates username and password. Then it sends an activation email
     """
 
     try:
-        await create_user_service(body, db_session)
+        await user_service.create_user_service(
+            username=body.username,
+            email=body.email,
+            password=body.password1
+        )
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={"message": "confirmation email was sent"}
@@ -50,11 +56,12 @@ async def create_user(
 @user_router.get(path="/verification")
 async def verify_email(
         token: str,
-        db_session: AsyncSession = Depends(get_db_session)) -> JSONResponse:
+        user_service: UserService = Depends(get_user_service)
+) -> JSONResponse:
     """Controller that verifies email after registration"""
 
     try:
-        await verify_email_service(token, db_session)
+        await user_service.verify_email_service(token=token)
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={"message": "The email was verified successfully"}
@@ -76,10 +83,12 @@ async def get_user(user: User = Depends(get_current_user)) -> ShowUserSchema:
 @user_router.delete(path="/")
 async def delete_user(
         user: User = Depends(get_current_user),
-        db_session: AsyncSession = Depends(get_db_session)) -> JSONResponse:
+        user_service: UserService = Depends(get_user_service)
+) -> JSONResponse:
     """Controller that deactivates user"""
 
-    await delete_user_service(user, db_session)
+    await user_service.delete_user_service(user=user)
+
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={"message": f"The user deleted successfully"}
@@ -89,12 +98,17 @@ async def delete_user(
 @user_router.post(path="/auth/login", response_model=TokenSchema)
 async def login(
         body: OAuth2PasswordRequestForm = Depends(),
-        db_session: AsyncSession = Depends(get_db_session)) -> TokenSchema:
+        user_service: UserService = Depends(get_user_service)
+) -> TokenSchema:
     """Controller for user authentication and authorization"""
 
     try:
-        token_data: dict = await login_service(body.username, body.password, db_session)
+        token_data: dict = await user_service.login_service(
+            username=body.username,
+            password=body.password
+        )
         return TokenSchema(**token_data)
+
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -105,10 +119,12 @@ async def login(
 @user_router.post(path="/auth/refresh-token", response_model=TokenSchema)
 async def refresh_token(
         user: User = Depends(get_current_user),
+        user_service: UserService = Depends(get_user_service)
 ) -> TokenSchema:
     """Controller that refreshes access token"""
 
-    token_data: dict = refresh_token_service(user)
+    token_data: dict = user_service.refresh_token_service(user=user)
+
     return TokenSchema(**token_data)
 
 
@@ -116,11 +132,15 @@ async def refresh_token(
 async def change_username(
         body: ChangeUsernameSchema,
         user: User = Depends(get_current_user),
-        db_session: AsyncSession = Depends(get_db_session)) -> ShowUserSchema:
+        user_service: UserService = Depends(get_user_service)
+) -> ShowUserSchema:
     """Controller for username changing"""
 
     try:
-        updated_user: User = await change_username_service(user, body.username, db_session)
+        updated_user: User = await user_service.change_username_service(
+            user=user,
+            new_username=body.username
+        )
         return updated_user
 
     except IntegrityError:
@@ -134,11 +154,16 @@ async def change_username(
 async def change_password(
         body: ChangePasswordSchema,
         user: User = Depends(get_current_user),
-        db_session: AsyncSession = Depends(get_db_session)) -> ShowUserSchema:
+        user_service: UserService = Depends(get_user_service)
+) -> ShowUserSchema:
     """Controller for password changing"""
 
     try:
-        updated_user: User = await change_password_service(user, body, db_session)
+        updated_user: User = await user_service.change_password_service(
+            user=user,
+            old_password=body.old_password,
+            new_password=body.password1
+        )
         return updated_user
 
     except ValueError:
@@ -151,32 +176,42 @@ async def change_password(
 @user_router.patch(path="/change-email")
 async def change_email(
         body: EmailSchema,
-        user: User = Depends(get_current_user)) -> JSONResponse:
+        user: User = Depends(get_current_user),
+        user_service: UserService = Depends(get_user_service)
+) -> JSONResponse:
     """Controller that sends email to confirm the email change"""
 
     try:
-        await change_email_service(new_email=body.email, user=user)
+        await user_service.change_email_service(
+            new_email=body.email,
+            user=user
+        )
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={"message": "Email for email change confirmation was sent"}
         )
+
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"message": "The user already uses this email"}
         )
+
     except (SMTPRecipientsRefused, SMTPDataError):
         raise email_sending_exception
 
-    
+
 @user_router.get(path="/change-email/confirmation", response_model=ShowUserSchema)
 async def confirm_email_change(
         token: str,
-        db_session: AsyncSession = Depends(get_db_session)) -> ShowUserSchema:
+        user_service: UserService = Depends(get_user_service)
+) -> ShowUserSchema:
     """Controller that changes email"""
 
     try:
-        updated_user: User = await confirm_email_change_service(token, db_session)
+        updated_user: User = await user_service.confirm_email_change_service(
+            token=token
+        )
         return updated_user
 
     except IntegrityError:
@@ -197,27 +232,38 @@ async def confirm_email_change(
 
 
 @user_router.post(path="/auth/reset-password")
-async def reset_password(body: EmailSchema) -> JSONResponse:
+async def reset_password(
+        body: EmailSchema,
+        user_service: UserService = Depends(get_user_service)
+) -> JSONResponse:
     """Controller that sends email to confirm password reset"""
 
     try:
-        await reset_password_service(body.email)
+        await user_service.reset_password_service(email=body.email)
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={"message": "Password reset email was sent"}
         )
+
     except (SMTPRecipientsRefused, SMTPDataError):
         raise email_sending_exception
 
 
-@user_router.patch(path="/auth/reset-password/confirmation", response_model=ShowUserSchema)
+@user_router.patch(
+    path="/auth/reset-password/confirmation",
+    response_model=ShowUserSchema
+)
 async def change_password_on_reset(
         body: ResetPasswordSchema,
-        db_session: AsyncSession = Depends(get_db_session)) -> ShowUserSchema:
+        user_service: UserService = Depends(get_user_service)
+) -> ShowUserSchema:
     """Controller that changes password on reset"""
 
     try:
-        updated_user: User = await change_password_on_reset_service(body.token, body.password1, db_session)
+        updated_user: User = await user_service.change_password_on_reset_service(
+            token=body.token,
+            new_password=body.password1
+        )
         return updated_user
 
     except JWTError:

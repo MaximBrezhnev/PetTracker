@@ -11,13 +11,13 @@ from src.event.services.dal_services import create_event_in_database, create_tas
     get_pet_from_database_by_id, get_event_from_database_by_id, get_events_from_database_by_user, \
     delete_event_from_database, update_event_in_database, delete_invalid_tasks_from_database
 from src.pet.models import Pet
-from src.pet.schemas import PetCreationDTO
+from src.pet.schemas import PetCreationSchema
 from src.user.models import User
-from src.background_worker.celery import send_notification_email
+from src.worker.celery import send_notification_email
 
 
 async def create_event_service(
-        body: PetCreationDTO,
+        body: PetCreationSchema,
         user: User,
         db_session: AsyncSession,
 ) -> Optional[dict]:

@@ -1,37 +1,47 @@
-from typing import Optional, List
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse
 
-from src.dependencies import get_db_session, get_current_user
+from src.dependencies import get_current_user
 from src.pet.models import Pet
-from src.pet.schemas import PetCreationDTO, ShowPetInDetailDTO, UpdatePetDTO, ShowPetDTO
-from src.pet.services.services import add_pet_service, get_pet_service, get_list_of_pets_service, delete_pet_service, \
-    update_pet_service
+from src.pet.schemas import PetCreationSchema, ShowPetInDetailSchema, UpdatePetSchema, ShowPetSchema
+from src.pet.services.services2 import PetService
 from src.user.models import User
+from src.pet.dependencies import get_pet_service
 
 
-pet_router = APIRouter(prefix="/pet")
+pet_router = APIRouter(
+    prefix="/pet",
+    tags=["pet", ]
+)
 
 
-@pet_router.post("/", response_model=ShowPetInDetailDTO)
+@pet_router.post("/", response_model=ShowPetInDetailSchema)
 async def add_pet(
-        body: PetCreationDTO,
-        db_session: AsyncSession = Depends(get_db_session),
-        user: User = Depends(get_current_user)
+        body: PetCreationSchema,
+        user: User = Depends(get_current_user),
+        pet_service: PetService = Depends(get_pet_service)
 ) -> Pet:
-    pet: Pet = await add_pet_service(body, user, db_session)
+    pet: Pet = await pet_service.add_pet(
+        user=user,
+        name=body.name,
+        species=body.species,
+        breed=body.breed,
+        gender=body.gender,
+        weight=body.weight
+    )
+
     return pet
 
 
-@pet_router.get("/", response_model=ShowPetInDetailDTO)
+@pet_router.get("/", response_model=ShowPetInDetailSchema)  # Обдумать
 async def get_pet(
         pet_id: str,
-        db_session: AsyncSession = Depends(get_db_session),
-        user: User = Depends(get_current_user)
-) -> ShowPetInDetailDTO:
-    pet, events = await get_pet_service(pet_id, db_session)
+        user: User = Depends(get_current_user),
+        pet_service: PetService = Depends(get_pet_service),
+) -> ShowPetInDetailSchema:
+    pet, events = await pet_service.get_pet_by_id(pet_id=pet_id)
 
     if pet is None:
         raise HTTPException(
@@ -39,7 +49,7 @@ async def get_pet(
             detail="Pet with this id not found"
         )
 
-    return ShowPetInDetailDTO(
+    return ShowPetInDetailSchema(
         pet_id=pet.pet_id,
         name=pet.name,
         species=pet.species,
@@ -50,12 +60,12 @@ async def get_pet(
     )
 
 
-@pet_router.get("/list-of-pets", response_model=List[ShowPetDTO])
+@pet_router.get("/list-of-pets", response_model=List[ShowPetSchema])
 async def get_list_of_pets(
-        db_session: AsyncSession = Depends(get_db_session),
-        user: User = Depends(get_current_user)
+        user: User = Depends(get_current_user),
+        pet_service: PetService = Depends(get_pet_service)
 ) -> List[Pet]:
-    pets: List[Pet] = await get_list_of_pets_service(user, db_session)
+    pets: List[Pet] = await pet_service.get_list_of_pets(user=user)
 
     if not pets:
         raise HTTPException(
@@ -70,10 +80,10 @@ async def get_list_of_pets(
 async def delete_pet(
         pet_id: str,
         user: User = Depends(get_current_user),
-        db_session: AsyncSession = Depends(get_db_session)
+        pet_service: PetService = Depends(get_pet_service)
 ) -> JSONResponse:
     try:
-        await delete_pet_service(pet_id, db_session)
+        await pet_service.delete_pet_by_id(pet_id=pet_id)
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={"message": "Pet was deleted successfully"}
@@ -85,12 +95,12 @@ async def delete_pet(
         )
 
 
-@pet_router.patch("/", response_model=ShowPetInDetailDTO)
+@pet_router.patch("/", response_model=ShowPetInDetailSchema)
 async def update_pet(
         pet_id: str,
-        body: UpdatePetDTO,
+        body: UpdatePetSchema,
         user: User = Depends(get_current_user),
-        db_session: AsyncSession = Depends(get_db_session)
+        pet_service: PetService = Depends(get_pet_service)
 ) -> Pet:
     parameters_for_update = body.dict(exclude_none=True)
 
@@ -101,12 +111,12 @@ async def update_pet(
         )
 
     try:
-        updated_pet: Pet = await update_pet_service(
+        updated_pet: Pet = await pet_service.update_pet(
             pet_id,
             parameters_for_update,
-            db_session
         )
         return updated_pet
+
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

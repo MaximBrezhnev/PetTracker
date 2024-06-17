@@ -5,11 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.pet.models import Pet
-from src.pet.schemas import PetCreationDTO
+from src.pet.schemas import PetCreationSchema
 from src.user.models import User
 
 
-async def create_pet(body: PetCreationDTO, user: User, db_session: AsyncSession) -> Pet:
+async def create_pet(body: PetCreationSchema, user: User, db_session: AsyncSession) -> Pet:
     async with db_session.begin():
         pet = Pet(
             name=body.name,

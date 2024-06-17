@@ -7,7 +7,7 @@ logger.setLevel(logging.DEBUG)
 
 log_file_path = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "background_worker.log"
+    "worker.log"
 )
 file_handler = logging.FileHandler(log_file_path)
 file_handler.setLevel(logging.DEBUG)

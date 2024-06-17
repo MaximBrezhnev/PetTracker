@@ -6,10 +6,13 @@ from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import async_session
-from src.user.exceptions import credentials_exception
+from src.exceptions import credentials_exception
 from src.user.models import User
 from src.user.services.auth_services import get_email_from_token
 from src.user.services.dal_services import get_user_by_email
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 async def get_db_session() -> Generator:
@@ -23,12 +26,10 @@ async def get_db_session() -> Generator:
         await session.close()
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-
-
 async def get_current_user(
         token: str = Depends(oauth2_scheme),
-        db_session: AsyncSession = Depends(get_db_session)) -> User:
+        db_session: AsyncSession = Depends(get_db_session)
+) -> User:
     """Dependence that gets user from JWT token"""
 
     try:
