@@ -1,202 +1,234 @@
 from datetime import timedelta
 from typing import Optional
 
-from jose import jwt, JWTError
+from jose import jwt
+from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.config import SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
+from src.config import project_settings
+from src.services import BaseService
 from src.user.models import User
-from src.user.schemas import CreateUserSchema, ChangePasswordSchema
-from src.user.services.auth_services import check_password, create_jwt_token, get_email_from_token, get_password_hash
-from src.user.services.dal_services import get_user_by_email, update_username_and_password, create_new_user, \
-    update_user_upon_verification, get_user_by_user_id, delete_user, change_username, \
-    change_password, update_user_when_changing_email, get_user_by_username
-from src.user.services.email_services import send_email
+from src.user.services import security
+from src.user.services.email import EmailService
+from src.user.services.hashing import Hasher
 
 
-async def create_user_service(body: CreateUserSchema, db_session: AsyncSession) -> None:
-    """Service for create_user controller"""
+class UserService(BaseService):
+    """Service representing business logic
+    used by the endpoints of user_router"""
 
-    user: Optional[User] = await get_user_by_email(body.email, db_session)
+    def __init__(self, db_session: AsyncSession, dal_class: type):
+        """Initializes UserService by binding sub services"""
 
-    if user is not None:
-        if user.is_active:
-            raise ValueError("User already exists")
-        await update_username_and_password(
-            body.username,
-            get_password_hash(body.password1),
-            user,
-            db_session
+        super().__init__(db_session=db_session, dal_class=dal_class)
+        self.hasher: Hasher = Hasher()
+        self.email: EmailService = EmailService()
+
+    async def create_user(self, username: str, email: str, password: str) -> None:
+        """Creates new user or update the current one
+        if the user already exists and is inactive. If the user exists
+        but is active then raises an exception"""
+
+        user: Optional[User] = await self.dal.get_user_by_email(email=email)
+
+        if user is not None:
+            if user.is_active:
+                raise ValueError("User already exists")
+
+            await self.dal.update_username_and_password(
+                username=username,
+                password=self.hasher.get_password_hash(password),
+                user=user,
+            )
+
+        else:
+            user: User = await self.dal.create_new_user(
+                username=username,
+                email=email,
+                hashed_password=self.hasher.get_password_hash(password),
+            )
+
+        await self.email.send_email(
+            email=[
+                user.email,
+            ],
+            instance=user,
+            subject="Письмо для подтверждения регистрации в PetTracker",
+            template_name="email_confirmation.html",
         )
 
-    else:
-        user: User = await create_new_user(
-            username=body.username,
-            email=body.email,
-            hashed_password=get_password_hash(body.password1),
-            db_session=db_session
+    async def verify_email(
+        self,
+        token: str,
+    ) -> None:
+        """Verifies email using the provided token"""
+
+        payload: dict = jwt.decode(
+            token, project_settings.SECRET_KEY, algorithms=["HS256"]
+        )
+        user: Optional[User] = await self.dal.get_user_by_email(
+            email=payload.get("email", None)
         )
 
-    await send_email(
-        email=[user.email, ],
-        instance=user,
-        subject="Письмо для подтверждения регистрации в PetTracker",
-        template_name="email_confirmation.html"
-    )
+        if user is None:
+            raise JWTError("Could not validate credentials")
 
+        await self.dal.activate_user(user=user)
 
-async def verify_email_service(token: str, db_session: AsyncSession) -> None:
-    """Service for verify_email controller"""
+    async def delete_user(self, user: User) -> None:
+        """Deletes user from database"""
 
-    payload: dict = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-    user: Optional[User] = await get_user_by_email(payload.get("email", None), db_session)
+        await self.dal.deactivate_user(user=user)
 
-    if user is None:
-        raise JWTError("Could not validate credentials")
+    async def login(self, username: str, password: str) -> dict:
+        """Logs the user into the system"""
 
-    await update_user_upon_verification(user, db_session)
+        user: Optional[User] = await self.dal.get_user_by_username(username=username)
 
+        if user is None:
+            raise ValueError("User does not exist")
 
-async def delete_user_service(user: User, db_session: AsyncSession) -> None:
-    """Service for delete_user controller"""
+        if not user.is_active:
+            raise ValueError("User does not exist")
 
-    await delete_user(user, db_session)
+        if not self.hasher.verify_password(user.hashed_password, password):
+            raise ValueError("Passwords do not match")
 
+        access_token: str = security.create_jwt_token(
+            user.email, timedelta(minutes=project_settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        )
+        refresh_token: str = security.create_jwt_token(
+            user.email, timedelta(days=project_settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        )
 
-async def login_service(username: str, password: str, db_session: AsyncSession) -> dict:
-    """Service for login controller"""
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+        }
 
-    user: Optional[User] = await get_user_by_username(username, db_session)
-    if user is None:
-        raise ValueError("User does not exist")
+    @staticmethod
+    def refresh_token(user: User) -> dict:
+        """Returns new access token based on the received one"""
 
-    if not user.is_active:
-        raise ValueError("User does not exist")
+        new_access_token: str = security.create_jwt_token(
+            email=user.email,
+            exp_timedelta=timedelta(
+                minutes=project_settings.ACCESS_TOKEN_EXPIRE_MINUTES
+            ),
+        )
+        return {
+            "access_token": new_access_token,
+            "token_type": "bearer",
+        }
 
-    if not check_password(user.hashed_password, password):
-        raise ValueError("Passwords do not match")
+    async def change_username(self, user: User, new_username: str) -> User:
+        """Changes username if new one does not match the current one"""
 
-    access_token: str = create_jwt_token(
-        user.email, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
-    refresh_token: str = create_jwt_token(
-        user.email, timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    )
+        if user.username != new_username:
+            updated_user: User = await self.dal.change_username(
+                user=user, new_username=new_username
+            )
+            return updated_user
 
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-    }
+        return user
 
+    async def change_password(
+        self,
+        user: User,
+        old_password: str,
+        new_password: str,
+    ) -> User:
+        """Changes user's password if the provided old password is correct"""
 
-def refresh_token_service(user: User) -> dict:
-    """Service for refresh_token controller"""
+        if not self.hasher.verify_password(user.hashed_password, old_password):
+            raise ValueError("Incorrect old password")
 
-    new_access_token: str = create_jwt_token(user.email, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    return {
-        "access_token": new_access_token,
-        "token_type": "bearer",
-    }
+        updated_user: Optional[User] = await self.dal.change_password(
+            user=user,
+            new_password=self.hasher.get_password_hash(new_password),
+        )
 
-
-async def change_username_service(user: User, new_username: str, db_session: AsyncSession) -> User:
-    """Service for change_username controller"""
-
-    if user.username != new_username:
-        updated_user: User = await change_username(user, new_username, db_session)
         return updated_user
 
-    return user
+    async def change_email(self, user: User, new_email: str) -> None:
+        """Sends email for email change confirmation if the provided
+        email does not match the current one"""
 
+        if user.email == new_email:
+            raise ValueError("The user already uses this email")
 
-async def change_password_service(
-        user: User,
-        body: ChangePasswordSchema,
-        db_session: AsyncSession) -> User:
-    """Service for change_password controller"""
+        await self.email.send_email(
+            email=[
+                new_email,
+            ],
+            instance=user,
+            subject="Письмо для подтверждения смены электронной почты в PetTracker",
+            template_name="email_change_confirmation.html",
+        )
 
-    if not check_password(user.hashed_password, body.old_password):
-        raise ValueError("Incorrect old password")
+    async def confirm_email_change(self, token: str) -> User:
+        """Changes user's email if the provided token is correct"""
 
-    updated_user: Optional[User] = await change_password(
-        user=user,
-        new_password=get_password_hash(body.password1),
-        db_session=db_session
-    )
+        payload: dict = jwt.decode(
+            token, project_settings.SECRET_KEY, algorithms=["HS256"]
+        )
+        user: Optional[User] = await self.dal.get_user_by_user_id(
+            user_id=payload.get("current_user_id", None)
+        )
 
-    return updated_user
+        if user is None:
+            raise JWTError("Could not validate credentials")
 
+        if not user.is_active:
+            raise ValueError("User does not exist")
 
-async def change_email_service(user: User, new_email: str) -> None:
-    """Service for change_email controller"""
+        new_email: str = payload.get("email", None)
+        if new_email is None:
+            raise JWTError("Could not validate credentials")
 
-    if user.email == new_email:
-        raise ValueError("The user already uses this email")
-    await send_email(
-        email=[new_email, ],
-        instance=user,
-        subject="Письмо для подтверждения смены электронной почты в PetTracker",
-        template_name="email_change_confirmation.html"
-    )
+        updated_user: User = await self.dal.change_email(
+            user=user,
+            new_email=new_email,
+        )
 
+        return updated_user
 
-async def confirm_email_change_service(
-        token: str, db_session: AsyncSession) -> User:
-    """Service for confirm_email_change controller"""
+    async def reset_password(self, email: str) -> None:
+        """Sends email for password reset"""
 
-    payload: dict = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-    user: Optional[User] = await get_user_by_user_id(payload.get("current_user_id", None), db_session)
+        await self.email.send_email(
+            email=[
+                email,
+            ],
+            subject="Письмо для сброса пароля в PetTracker",
+            template_name="password_reset_confirmation.html",
+        )
 
-    if user is None:
-        raise JWTError("Could not validate credentials")
-
-    if not user.is_active:
-        raise ValueError("User does not exist")
-
-    new_email: str = payload.get("email", None)
-    if new_email is None:
-        raise JWTError("Could not validate credentials")
-
-    updated_user: User = await update_user_when_changing_email(
-        user=user,
-        new_email=new_email,
-        db_session=db_session
-    )
-    return updated_user
-
-
-async def reset_password_service(email: str) -> None:
-    """Service for reset_password controller"""
-
-    await send_email(
-        email=[email, ],
-        subject="Письмо для сброса пароля в PetTracker",
-        template_name="password_reset_confirmation.html"
-    )
-
-
-async def change_password_on_reset_service(
+    async def change_password_on_reset(
+        self,
         token: str,
         new_password: str,
-        db_session: AsyncSession) -> User:
-    """Service for change_password_on_reset controller"""
+    ) -> User:
+        """Changes user's password if the provided token is correct"""
 
-    payload: dict = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-    user: Optional[User] = await get_user_by_email(
-        email=payload.get("email", None),
-        db_session=db_session
-    )
+        payload: dict = jwt.decode(
+            token, project_settings.SECRET_KEY, algorithms=["HS256"]
+        )
 
-    if user is None:
-        raise ValueError("User does not exist")
+        user: Optional[User] = await self.dal.get_user_by_email(
+            email=payload.get("email", None),
+        )
 
-    if not user.is_active:
-        raise ValueError("User does not exist")
+        if user is None:
+            raise ValueError("User does not exist")
 
-    updated_user: User = await change_password(
-        user=user,
-        new_password=get_password_hash(new_password),
-        db_session=db_session
-    )
-    return updated_user
+        if not user.is_active:
+            raise ValueError("User does not exist")
+
+        updated_user: User = await self.dal.change_password(
+            user=user,
+            new_password=self.hasher.get_password_hash(new_password),
+        )
+
+        return updated_user

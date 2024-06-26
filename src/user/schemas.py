@@ -1,12 +1,15 @@
-from typing import Optional, List
+from typing import Optional
 
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel
+from pydantic import ConfigDict
+from pydantic import EmailStr
 
-from src.user.schema_mixins import UsernameValidationMixin, PasswordValidationMixin
+from src.user.schema_mixins import PasswordValidationMixin
+from src.user.schema_mixins import UsernameValidationMixin
 
 
 class CreateUserSchema(UsernameValidationMixin, PasswordValidationMixin, BaseModel):
-    """Model that represents data for registration"""
+    """Schema that represents data for registration"""
 
     username: str
     email: EmailStr
@@ -15,7 +18,7 @@ class CreateUserSchema(UsernameValidationMixin, PasswordValidationMixin, BaseMod
 
 
 class ShowUserSchema(BaseModel):
-    """Model that represents data for user displaying"""
+    """Schema that represents data for user displaying"""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -24,7 +27,7 @@ class ShowUserSchema(BaseModel):
 
 
 class TokenSchema(BaseModel):
-    """Model that represents data for authorization"""
+    """Schema that represents data for authorization"""
 
     access_token: str
     refresh_token: Optional[str] = None
@@ -32,13 +35,13 @@ class TokenSchema(BaseModel):
 
 
 class ChangeUsernameSchema(UsernameValidationMixin, BaseModel):
-    """Model that represents data for username change"""
+    """Schema that represents data for username change"""
 
     username: str
 
 
 class ChangePasswordSchema(PasswordValidationMixin, BaseModel):
-    """Model that represents data for password change"""
+    """Schema that represents data for password change"""
 
     old_password: str
     password1: str
@@ -46,13 +49,13 @@ class ChangePasswordSchema(PasswordValidationMixin, BaseModel):
 
 
 class EmailSchema(BaseModel):
-    """Model that represents data with password reset email"""
+    """Schema that represents data with password reset email"""
 
     email: EmailStr
 
 
 class ResetPasswordSchema(PasswordValidationMixin, BaseModel):
-    """Model that represents data for password reset"""
+    """Schema that represents data for password reset"""
 
     token: str
     password1: str

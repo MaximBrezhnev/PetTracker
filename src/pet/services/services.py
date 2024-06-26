@@ -1,76 +1,100 @@
-from typing import Optional, List, Tuple
-
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+import operator
+from typing import List
+from typing import Optional
+from typing import Tuple
+from uuid import UUID
 
 from src.pet.models import Pet
-from src.pet.schemas import PetCreationSchema
-from src.pet.services.dal_services import create_pet, get_pet, get_pets, delete_pet, update_pet
+from src.pet.models import PetGenderEnum
+from src.services import BaseService
 from src.user.models import User
 
 
-async def add_pet_service(body: PetCreationSchema, user: User, db_session: AsyncSession) -> Pet:
-    pet: Pet = await create_pet(body, user, db_session)
-    return pet
+class PetService(BaseService):
+    """Service representing business logic
+    used by the endpoints of pet_router"""
 
-
-async def get_pet_service(
-        pet_id,
-        db_session: AsyncSession
-) -> Optional[Tuple[Pet, List[dict]]]:
-    pet: Optional[Pet] = await get_pet(pet_id, db_session)
-
-    events = []
-    for event in pet.events:
-        events.append(
-            {
-                "event_id": event.event_id,
-                "title": event.title,
-                "content": event.content,
-                "pet_id": event.pet_id,
-                "year": event.scheduled_at.year,
-                "month": event.scheduled_at.month,
-                "day": event.scheduled_at.day,
-                "hour": event.scheduled_at.hour,
-                "minute": event.scheduled_at.minute,
-                "is_happened": event.is_happened,
-            }
-        )
-    return pet, events
-
-
-async def get_list_of_pets_service(
+    async def add_pet(
+        self,
         user: User,
-        db_session: AsyncSession
-) -> List[Pet]:
-    pets: List[Pet] = await get_pets(user, db_session)
-    return pets
+        name: str,
+        species: str,
+        breed: str,
+        gender: PetGenderEnum,
+        weight: int,
+    ) -> Tuple[Pet, List[dict]]:
+        """Adds pet to the provided user"""
 
+        pet: Pet = await self.dal.create_pet(
+            user=user,
+            name=name,
+            species=species,
+            breed=breed,
+            gender=gender,
+            weight=weight,
+        )
+        return pet
 
-async def delete_pet_service(
-        pet_id: str,
-        db_session: AsyncSession
-) -> None:
-    pet: Optional[Pet] = await get_pet(pet_id, db_session)
-    if pet is None:
-        raise ValueError("Pet with this id does not exist")
+    async def get_pet_by_id(
+        self, pet_id: UUID, user_id: UUID
+    ) -> [Tuple[Optional[Pet], List[dict]]]:
+        """Gets a pet by its id"""
 
-    await delete_pet(pet, db_session)
+        pet: Optional[Pet] = await self.dal.get_pet(pet_id=pet_id, user_id=user_id)
 
+        if pet is None:
+            return None, []
 
-async def update_pet_service(
-        pet_id: str,
-        parameters_for_update: dict,
-        db_session: AsyncSession
-) -> Pet:
-    pet: Optional[Pet] = await get_pet(pet_id, db_session)
+        return pet, self._form_event_data_for_pet(pet=pet)
 
-    if pet is None:
-        raise ValueError("Pet with this id does not exist")
+    @staticmethod
+    def _form_event_data_for_pet(pet: Pet) -> List[dict]:
+        """Forms data containing a list of events belonged to the provided pet"""
 
-    updated_pet = await update_pet(pet, parameters_for_update, db_session)
+        events = []
+        for event in sorted(
+            pet.events, key=operator.attrgetter("scheduled_at"), reverse=True
+        ):
+            events.append(
+                {
+                    "event_id": event.event_id,
+                    "title": event.title,
+                    "pet_id": event.pet_id,
+                    "year": event.scheduled_at.year,
+                    "month": event.scheduled_at.month,
+                    "day": event.scheduled_at.day,
+                    "hour": event.scheduled_at.hour,
+                    "minute": event.scheduled_at.minute,
+                    "is_happened": event.is_happened,
+                }
+            )
+        return events
 
-    return updated_pet
+    async def get_list_of_pets(self, user: User) -> List[Pet]:
+        """Gets a list of pets belonged to the provided user"""
 
+        pets: List[Pet] = await self.dal.get_pets(user=user)
+        return pets
 
+    async def delete_pet_by_id(self, pet_id: UUID, user_id: UUID) -> None:
+        """Deletes a pet with the provided id"""
 
+        pet: Optional[Pet] = await self.dal.get_pet(pet_id=pet_id, user_id=user_id)
+        if pet is None:
+            raise ValueError("Pet with this id does not exist")
+
+        await self.dal.delete_pet(pet=pet)
+
+    async def update_pet(
+        self, pet_id: UUID, user_id: UUID, parameters_for_update: dict
+    ) -> Pet:
+        """Updates a pet using the provided parameters for update"""
+
+        pet: Optional[Pet] = await self.dal.get_pet(pet_id=pet_id, user_id=user_id)
+
+        if pet is None:
+            return
+
+        updated_pet = await self.dal.update_pet(pet, parameters_for_update)
+
+        return updated_pet

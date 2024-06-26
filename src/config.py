@@ -1,22 +1,62 @@
-from passlib.context import CryptContext
+import os
 
-SECRET_KEY: str = "2j@0lC#&8eB^k7l%oP*Vd9$LxRz!mS5wUq+4yG"
-ALGORITHM: str = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
 
-PWD_CONTEXT = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-MAIL_USERNAME = "max.b04.03@mail.ru",
-MAIL_PASSWORD = "vgg0wQQcx6dbWZ5u2adc",
-MAIL_FROM = "max.b04.03@mail.ru",
-MAIL_PORT = 2525,
-MAIL_SERVER = "smtp.mail.ru",
-MAIL_STARTTLS = True,
-MAIL_SSL_TLS = False,
-USE_CREDENTIALS = True,
-VALIDATE_CERTS = True,
+class ProjectSettings(BaseSettings):
+    """Class representing the project settings excluding
+    the database settings"""
 
-EMAIL_CONFIRMATION_TOKEN_EXPIRE_SECONDS: int = 300
+    SECRET_KEY: str
+    ALGORITHM: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
+    REFRESH_TOKEN_EXPIRE_DAYS: int
 
-FRONTEND_URL: str = "http://localhost:18000/frontend"
+    MAIL_CONFIRMATION_TOKEN_EXPIRE_SECONDS: int
+    MAIL_USERNAME: str
+    MAIL_PASSWORD: str
+    MAIL_FROM: str
+    MAIL_PORT: int
+    MAIL_SERVER: str
+    MAIL_STARTTLS: bool
+    MAIL_SSL_TLS: bool
+    USE_CREDENTIALS: bool
+    VALIDATE_CERTS: bool
+
+    PWD_SCHEMA: str
+    PWD_DEPRECATED: str
+
+    APP_TITLE: str
+    API_URL_PREFIX: str
+    APP_HOST: str
+    APP_PORT: int
+    FRONTEND_HOST: str
+    FRONTEND_PORT: int
+
+    CELERY_BROKER_HOST: str
+    CELERY_RESULT_BACKEND_HOST: str
+    CELERY_BROKER_PORT: int
+    CELERY_RESULT_BACKEND_PORT: int
+
+    @property
+    def CELERY_BROKER_URL(self):
+        return f"redis://{self.CELERY_BROKER_HOST}:{self.CELERY_BROKER_PORT}"
+
+    @property
+    def CELERY_RESULT_BACKEND_URL(self):
+        return f"redis://{self.CELERY_RESULT_BACKEND_HOST}:{self.CELERY_RESULT_BACKEND_PORT}"
+
+    @property
+    def FRONTEND_URL(self):
+        return f"http://{self.FRONTEND_HOST}:{self.FRONTEND_PORT}"
+
+    model_config = SettingsConfigDict(
+        env_file=os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"
+        ),
+        extra="ignore",
+    )
+
+
+project_settings = ProjectSettings()

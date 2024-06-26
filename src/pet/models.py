@@ -1,15 +1,23 @@
 import datetime
-from enum import Enum
 import uuid
+from enum import Enum
 
-from sqlalchemy import String, Enum as SQLAlchemyEnum, ForeignKey, text, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Enum as SQLAlchemyEnum
+from sqlalchemy import ForeignKey
+from sqlalchemy import String
+from sqlalchemy import text
+from sqlalchemy import UUID
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
+from sqlalchemy.orm import relationship
 
 from src.database import Base
 from src.user.models import User  # noqa
 
 
 class PetGenderEnum(str, Enum):
+    """Enum class that represents options of pet gender"""
+
     male = "male"
     female = "female"
 
@@ -30,7 +38,7 @@ class Pet(Base):
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         server_default=text("TIMEZONE ('utc', now())"),
-        onupdate=datetime.datetime.utcnow
+        onupdate=datetime.datetime.utcnow,
     )
     owner_id: Mapped[UUID] = mapped_column(ForeignKey("user.user_id"))
 
@@ -40,4 +48,5 @@ class Pet(Base):
     def __repr__(self):
         return self.name
 
-
+    def __eq__(self, other):
+        return str(self.pet_id) == str(other.pet_id)

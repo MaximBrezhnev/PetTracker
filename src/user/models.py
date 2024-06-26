@@ -3,7 +3,9 @@ import uuid
 from uuid import UUID
 
 from sqlalchemy import text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
+from sqlalchemy.orm import relationship
 
 from src.database import Base
 
@@ -22,7 +24,7 @@ class User(Base):
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         server_default=text("TIMEZONE ('utc', now())"),
-        onupdate=datetime.datetime.utcnow
+        onupdate=datetime.datetime.utcnow,
     )
     is_active: Mapped[bool] = mapped_column(default=False)
 
@@ -31,3 +33,5 @@ class User(Base):
     def __repr__(self):
         return self.username
 
+    def __eq__(self, other):
+        return self.email == other.email

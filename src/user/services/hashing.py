@@ -1,17 +1,27 @@
 from passlib.context import CryptContext
 
-from src.config2 import project_settings
+from src.config import project_settings
 
 
 class Hasher:
+    """Class that enables to work with password hashing"""
+
     def __init__(self):
-        self.pwd_context = CryptContext(
-            schemes=[project_settings.PWD_SCHEMA, ],
-            deprecated=project_settings.PWD_DEPRECATED
+        """Configures the schema of password hashing"""
+
+        self.pwd_context: CryptContext = CryptContext(
+            schemes=[
+                project_settings.PWD_SCHEMA,
+            ],
+            deprecated=project_settings.PWD_DEPRECATED,
         )
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
-        return self.pwd_context.verify(plain_password, hashed_password)
+        """Checks whether the provided password matches the hashed one"""
+
+        return self.pwd_context.verify(hashed_password, plain_password)
 
     def get_password_hash(self, password: str) -> str:
+        """Gets the hash of the provided password"""
+
         return self.pwd_context.hash(password)
