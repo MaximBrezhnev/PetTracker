@@ -5,8 +5,8 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from src.database import Base
-from src.event.models import Event
-from src.event.models import TaskRecord
+from src.event.models import Event  # noqa
+from src.event.models import TaskRecord  # noqa
 from src.pet.models import Pet  # noqa
 from src.user.models import User  # noqa
 

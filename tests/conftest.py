@@ -37,24 +37,24 @@ load_dotenv()
 
 TEST_DATABASE_URL: str = (
     f"postgresql+asyncpg://{os.getenv('TEST_DB_USER')}:{os.getenv('TEST_DB_PASSWORD')}@"
-    f"{os.getenv('TEST_DB_HOST')}:{os.getenv('TEST_DB_PORT')}/{os.getenv('TEST_DB_NAME')}"
+    f"{os.getenv('TEST_DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('TEST_DB_NAME')}"
 )
 
 TEST_SYNC_DATABASE_URL: str = (
     f"postgresql://{os.getenv('TEST_DB_USER')}:{os.getenv('TEST_DB_PASSWORD')}@"
-    f"{os.getenv('TEST_DB_HOST')}:{os.getenv('TEST_DB_PORT')}/{os.getenv('TEST_DB_NAME')}"
+    f"{os.getenv('TEST_DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('TEST_DB_NAME')}"
 )
-TABLES: list[str] = [
-    "user",
-]
+
+TABLES: list[str] = ["user", "pet", "event", "task_record"]
 
 
 @pytest.fixture(scope="session", autouse=True)
 async def run_migrations() -> None:
     """Fixture that creates and runs migrations before a testing session"""
 
+    os.system("alembic upgrade heads")
     os.system('alembic revision --autogenerate -m "test running migrations"')
-    os.system("alembic upgrade head")
+    os.system("alembic upgrade heads")
 
 
 @pytest.fixture(scope="session")
@@ -258,9 +258,9 @@ def _get_pet_data_dict(pet: Optional[tuple]) -> dict:
         pet_data["name"] = pet[1]
         pet_data["species"] = pet[2]
         pet_data["breed"] = pet[3]
+        pet_data["gender"] = pet[8]
         pet_data["weight"] = pet[4]
         pet_data["owner_id"] = pet[7]
-        pet_data["gender"] = pet[8]
 
     return pet_data
 
