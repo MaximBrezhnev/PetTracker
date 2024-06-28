@@ -1,0 +1,72 @@
+services:
+
+  app:
+    restart: always
+    depends_on:
+        - real_db
+        - test_db
+        - redis
+    build:
+        context: .
+    env_file:
+        - .env
+    ports:
+        - "${APP_PORT}:${APP_PORT}"
+    command: >
+      sh -c "alembic upgrade head &&
+      python3 -m src.main"
+    networks:
+        - custom
+
+  real_db:
+    image: postgres:16-alpine
+    restart: always
+    volumes:
+      - ~/.pg/pg_data/PetTracker:/var/lib/postgresql/data
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    ports:
+      - "${DB_PORT}:${DB_PORT}"
+    networks:
+      - custom
+
+  test_db:
+    image: postgres:16-alpine
+    restart: no
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DB=${TEST_DB_NAME}
+      - POSTGRES_USER=${TEST_DB_USER}
+      - POSTGRES_PASSWORD=${TEST_DB_PASSWORD}
+    ports:
+      - "${TEST_DB_PORT}:${DB_PORT}"
+    networks:
+      - custom
+
+  redis:
+    image: redis:7
+    restart: always
+    ports:
+      - "${CELERY_BROKER_PORT}:${CELERY_BROKER_PORT}"
+    networks:
+      - custom
+
+  worker:
+    restart: always
+    depends_on:
+      - redis
+      - real_db
+      - test_db
+    build: .
+    command: celery -A src.worker.celery worker --loglevel=info
+    networks:
+      - custom
+
+networks:
+  custom:
+    driver: bridge
